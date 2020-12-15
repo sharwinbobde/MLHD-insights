@@ -1,0 +1,53 @@
+# Added by Sharwin Bobde
+.ivy2/*
+target/*
+.sbt/*
+.cache/*
+.scala_history
+spark-events/*
+*.orc
+*.pbf
+*.crc
+
+# vscode env
+.vscode/*
+
+# Python virtual environment
+MLHD-insights-venv/
+
+
+# sbt
+# (may want to keep parts of 'project')
+bin/
+project/
+target/
+build/
+
+# eclipse
+build
+.classpath
+.project
+.settings
+.worksheet
+
+# intellij idea
+*.log
+*.iml
+*.ipr
+*.iws
+.idea
+
+# mac
+.DS_Store
+
+# other?
+.history
+.scala_dependencies
+.cache
+.cache-main
+
+#general
+*.class
+
+.ivy2
+spark-events
