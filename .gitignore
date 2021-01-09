@@ -3,11 +3,17 @@
 target/*
 .sbt/*
 .cache/*
+.gradle/*
+archived
 .scala_history
 spark-events/*
 *.orc
 *.pbf
 *.crc
+*.svg
+graph_properties.json
+out_data/*
+out_data*
 
 # vscode env
 .vscode/*

@@ -16,6 +16,7 @@ resolvers ++= Seq(
 libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-core" % sparkVersion % "provided",
   "org.apache.spark" %% "spark-sql" % sparkVersion % "provided",
+  "org.apache.spark" %% "spark-mllib" % sparkVersion % "provided",
   "com.arangodb" %% "arangodb-spark-connector" % "1.1.0"
 //  "org.locationtech.geomesa" %% "geomesa-spark-jts" % "3.0.0",
 //  "com.uber" % "h3" % "3.6.4"
