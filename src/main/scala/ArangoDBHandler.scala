@@ -51,7 +51,7 @@ object ArangoDBHandler {
       .load[ArtistToRecordingRelation](sc,
         "artists_to_recordings",
         ReadOptions("MLHD_processing", collection = "artists_to_recordings"))
-    spark.createDataFrame(rowRDD = user_to_recs_rdd.map(x => x.getAsRow), new UserToRecordingOrArtistRelation().getSchema)
+    spark.createDataFrame(rowRDD = user_to_recs_rdd.map(x => x.getAsRow), new ArtistToRecordingRelation().getSchema)
       .persist(StorageLevel.DISK_ONLY)
   }
 }

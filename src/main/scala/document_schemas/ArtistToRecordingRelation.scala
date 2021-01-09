@@ -1,7 +1,7 @@
 package document_schemas
 
 import org.apache.spark.sql.Row
-import org.apache.spark.sql.types.{ShortType, StringType, StructType}
+import org.apache.spark.sql.types.{IntegerType, ShortType, StringType, StructType}
 
 class ArtistToRecordingRelation (var _from: String,
                                  var _to: String,
@@ -14,6 +14,6 @@ class ArtistToRecordingRelation (var _from: String,
     new StructType()
       .add("_from", StringType, nullable = false)
       .add("_to", StringType, nullable = false)
-      .add("part", ShortType, nullable = false)
+      .add("part", IntegerType, nullable = false)
   }
 }

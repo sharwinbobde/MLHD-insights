@@ -35,7 +35,7 @@ object GraphProperties {
     val artists = getArtists(sc, spark)
     val users_to_recs = getUserToRecordingEdges(sc, spark)
     val users_to_artists = getUserToArtistEdges(sc, spark)
-    val artists_to_recs = getUserToArtistEdges(sc, spark)
+    val artists_to_recs = getArtistToRecordingEdges(sc, spark)
 
     var m = Map[String, Any]()
     m += ("users" -> users.count())
@@ -46,20 +46,20 @@ object GraphProperties {
     m += ("users_to_artists" -> users_to_artists.count())
     m += ("artists_to_recs" -> artists_to_recs.count())
 
-    val arr1 = getEdgeSums(users_to_recs, 144)
+    val arr1 = getEdgeSums(users_to_recs, max_parts)
     m += ("users_to_recs_sums" -> JSONObject(arr1(0)))
 
-    val arr2 = getEdgeSums(users_to_artists, 144)
+    val arr2 = getEdgeSums(users_to_artists, max_parts)
     m += ("users_to_artists_sums" -> JSONObject(arr2(0)))
 
     (10 to max_parts by 20).foreach(upto_part=> {
-      val arr3 = getEdgeSums(users_to_recs, 144)
-      m += ("users_to_recs_upto_part_" + upto_part.toString + "_sums" -> JSONObject(arr1(0)))
+      val arr3 = getEdgeSums(users_to_recs, upto_part)
+      m += ("users_to_recs_upto_part_" + upto_part.toString + "_sums" -> JSONObject(arr3(0)))
     })
 
     (10 to max_parts by 20).foreach(upto_part=> {
-      val arr3 = getEdgeSums(users_to_artists, 144)
-      m += ("users_to_artists_upto_part_" + upto_part.toString + "_sums" -> JSONObject(arr1(0)))
+      val arr4 = getEdgeSums(users_to_artists, upto_part)
+      m += ("users_to_artists_upto_part_" + upto_part.toString + "_sums" -> JSONObject(arr4(0)))
     })
 
     // Stop the underlying SparkContext

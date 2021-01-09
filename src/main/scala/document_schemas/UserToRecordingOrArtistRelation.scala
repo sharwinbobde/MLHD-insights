@@ -1,7 +1,7 @@
 package document_schemas
 
 import org.apache.spark.sql.Row
-import org.apache.spark.sql.types.{IntegerType, ShortType, StringType, StructType}
+import org.apache.spark.sql.types.{IntegerType, StringType, StructType}
 
 
 class UserToRecordingOrArtistRelation(var _from: String,
