@@ -3,9 +3,8 @@
 #
 
 # user: root
-# pass: Happy2Help!
+# pass: "Happy2Help!"
 database_path="/run/media/sharwinbobde/SharwinThesis/agarodb_data"
-#database_path="/home/sharwinbobde/tudelft-HPC-cluster-home/arangodb_data/"
 
 arangodb --starter.mode single --starter.data-dir $database_path \
         --dbservers.rocksdb.write-buffer-size 100123400 \

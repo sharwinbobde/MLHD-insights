@@ -3,17 +3,19 @@ import document_schemas.{Node, UserToRecordingOrArtistRelation}
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.ml.evaluation.RegressionEvaluator
 import org.apache.spark.ml.recommendation.{ALS, ALSModel}
-import org.apache.spark.sql.functions.{col, isnan, monotonically_increasing_id, udf, posexplode}
+import org.apache.spark.sql.functions.{col, isnan, monotonically_increasing_id, posexplode, udf}
 import org.apache.spark.sql.types.IntegerType
 import org.apache.spark.sql.{Dataset, Row, SparkSession}
 import org.apache.spark.storage.StorageLevel
 import ArangoDBHandler._
 
+import scala.collection.mutable.ArrayBuffer
+
 object CollaborativeFiltering {
 
   val ratingCol = "rating_01"
   val items_to_recommend = 10
-  val selected_year: String = "2005"
+  val selected_year: String = "2006"
 
 
   def main(args: Array[String]) {
@@ -37,26 +39,65 @@ object CollaborativeFiltering {
     val users = getUsers(sc, spark)
     val recs = getRecordings(sc, spark)
     val user_recs_interactions = getUserToRecordingEdges(sc, spark)
+    user_recs_interactions.printSchema()
+    println("total interactions = " + user_recs_interactions.count().toString)
 
     //    join dataframes to make users and recs numeric
-    val interactions_preprocessed = preprocessEdges(user_recs_interactions, users, recs)
-    interactions_preprocessed.printSchema()
+    //     Used for train-test
+    //    val interactions_preprocessed = preprocessEdges(user_recs_interactions, users, recs)
+    //    interactions_preprocessed.printSchema()
 
-    //    Train-Test split
-    //    TODO get known crossvalidation sets later
-    val Array(train, test) = interactions_preprocessed.randomSplit(Array(0.8, 0.2))
+    //    Crossvalidation for hyperparameter tuning
+    (1 until 8).foreach(fold_num => {
+      println("fold = " + fold_num.toString)
+      val hyperparameter_rmse = ArrayBuffer[Double]()
+      val train_users = spark.read
+        .option("header", "true")
+        .csv(out_dir + "cv_fold_" + fold_num.toString + "_train.csv")
+      val val_users = spark.read
+        .option("header", "true")
+        .csv(out_dir + "cv_fold_" + fold_num.toString + "_validation.csv")
+
+      println("train size = " + train_users.count().toString)
+      println("val size = " + val_users.count().toString)
+
+      //    Preprocess edges
+      val train_interactions = preprocessEdges(
+        user_recs_interactions,
+        users.join(
+          train_users.withColumnRenamed("user", "_key"),
+          Seq("_key"),
+          "left_semi"),
+        recs)
+      val val_interactions = preprocessEdges(
+        user_recs_interactions,
+        users.join(
+          val_users.withColumnRenamed("user", "_key"),
+          Seq("_key"),
+          "left_semi"),
+        recs)
+
+      val_interactions.orderBy("user_id").show(100)
+
+      println("train interactions = " + train_interactions.count().toString)
+      println("val interactions = " + val_interactions.count().toString)
+    })
 
 
-    // Get predictions
-    val model = getCFModel(train)
-    var predictions = getPredictions(model, test)
-    predictions = postprocessPredictions(predictions, users, recs)
-    predictions.printSchema()
-    predictions.show(50)
 
-    //    Get training error
-    val rmse = getRMSE(model, predictions)
-    println(s"Root-mean-square error = $rmse")
+    //    val Array(train, test) = interactions_preprocessed.randomSplit(Array(0.8, 0.2))
+
+    //    // Get predictions
+    //    val model = getCFModel(train)
+    //    var predictions = getPredictions(model, test)
+    //    predictions = postprocessPredictions(predictions, users, recs)
+    //    predictions.printSchema()
+    //    predictions.show(50)
+    //
+    //    //    Get training error
+    //    val rmse = getRMSE(model, predictions)
+    //    println(s"Root-mean-square error = $rmse")
+
 
     ////    Get recommendations
     //    val model_recommend = getCFModel(interactions_preprocessed)

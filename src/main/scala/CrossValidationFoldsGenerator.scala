@@ -26,7 +26,7 @@ object CrossValidationFoldsGenerator {
         .config("arangodb.hosts", "plb.sharwinbobde.com:8529") // system ip as docker ip won't be loopback
         .config("arangodb.user", "root")
         .config("arangodb.password", "Happy2Help!")
-        .appName("CollabFiltering")
+        .appName("CrossValidationFoldsGenerator")
         .getOrCreate()
 
     val sc = spark.sparkContext
@@ -34,7 +34,14 @@ object CrossValidationFoldsGenerator {
     val users = getUsers(sc, spark)
       .select(col("_key").alias("user"))
 
-    var Array(train, test) = users.randomSplit(Array(0.8, 0.2), 424356)
+//    TODO Split by years
+
+
+//    TODO find active users by threshold
+
+
+
+    val Array(train, test) = users.randomSplit(Array(0.7, 0.3), 424356)
     println("\ntrainSize = " + train.count().toString)
     println("\ntestSize = " + test.count().toString)
     test.printSchema()
@@ -54,7 +61,7 @@ object CrossValidationFoldsGenerator {
       .csv(out_dir + "test.csv")
 
 
-    val kFolds = MLUtils.kFold(train.rdd, 7, 4242)
+    val kFolds = MLUtils.kFold(train.rdd, 5, 4242)
 
     var fold_num = 1
     kFolds.foreach((fold: (RDD[Row],RDD[Row]))=>{
