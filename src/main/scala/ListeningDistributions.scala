@@ -40,45 +40,48 @@ object ListeningDistributions {
     val sc = spark.sparkContext
     val user_rec_interactions = getUserToRecordingEdges(sc, spark)
 
-    //    from 2006 to 2018
-    //    (2006 until 2007).foreach(i => {
-    //      val year_str = i.toString
-    //      storeStatsForYear(year_str, user_rec_interactions, out_dir)
-    //    })
+    //        from 2006 to 2018
+    (2006 until 2007).foreach(i => {
+      val year_str = i.toString
+      storeStatsForYear(year_str, user_rec_interactions)
+    })
 
-    //  Look at user's total listens every year
-    //            user_rec_interactions
-    //              .select(col("_from"), col("years.*"))
-    //              .withColumn("users", substring(col("_from"), 7, 36))
-    //              .groupBy("users")
-    //              .agg(
-    //                sum("yr_2005"),
-    //                sum("yr_2006"),
-    //                sum("yr_2007"),
-    //                sum("yr_2008"),
-    //                sum("yr_2009"),
-    //                sum("yr_2010"),
-    //                sum("yr_2011"),
-    //                sum("yr_2012"),
-    //                sum("yr_2013"),
-    //                sum("yr_2014"),
-    //              )
-    //              .coalesce(1)
-    //              .write
-    //              .mode(SaveMode.Overwrite)
-    //              .option("header", "true")
-    //              .csv(out_dir + "user_listens_per_year.csv")
+    //      Look at user's total listens every year
+    val user_listens_per_year = user_rec_interactions
+      .select(col("_from"), col("years.*"))
+      .withColumn("users", substring(col("_from"), 7, 36))
+      .groupBy("users")
+      .agg(
+        sum("yr_2005"),
+        sum("yr_2006"),
+        sum("yr_2007"),
+        sum("yr_2008"),
+        sum("yr_2009"),
+        sum("yr_2010"),
+        sum("yr_2011"),
+        sum("yr_2012"),
+        sum("yr_2013"),
+        sum("yr_2014"),
+      )
+
+    user_listens_per_year
+      .coalesce(1)
+      .write
+      .mode(SaveMode.Overwrite)
+      .option("header", "true")
+      .csv(out_dir + "user_listens_per_year.csv")
+
 
 
     // Look at percentile distributions of listens for every year
-    //    percentileUserListensByYear(user_rec_interactions)
+    percentileUserListensByYear(user_listens_per_year)
 
 
     ////        get Subscribed uses by years
-    saveSubscribedUsersByYear(user_rec_interactions)
+    saveSubscribedUsersByYear(user_listens_per_year)
 
     //         get percentile distributions of listens for every year normalised by the subscribers
-    subscriberNormalisedPercentileUserListensByYear(user_rec_interactions, spark)
+    subscriberNormalisedPercentileUserListensByYear(user_listens_per_year, spark)
 
 
     // Stop the underlying SparContext
@@ -86,29 +89,13 @@ object ListeningDistributions {
     System.exit(0)
   }
 
-  def percentileUserListensByYear(user_rec_interactions: Dataset[Row]): Unit = {
+  def percentileUserListensByYear(user_listens_per_year: DataFrame): Unit = {
     val percentiles_to_extract = Array(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
 
-    val df = user_rec_interactions
-      .select(col("_from").alias("user"), col("years.*"))
-      .groupBy("user")
-      .agg(
-        sum(col("yr_2005")),
-        sum(col("yr_2006")),
-        sum(col("yr_2007")),
-        sum(col("yr_2008")),
-        sum(col("yr_2009")),
-        sum(col("yr_2010")),
-        sum(col("yr_2011")),
-        sum(col("yr_2012")),
-        sum(col("yr_2013")),
-        sum(col("yr_2014")),
-      )
-      .cache()
     var m = Map[String, Json]()
     (2005 until 2015).foreach(yr => {
-      m += (yr.toString -> df.stat.
-        approxQuantile("sum(yr_" + yr.toString + ")",
+      m += (yr.toString -> user_listens_per_year.stat
+        .approxQuantile("sum(yr_" + yr.toString + ")",
           percentiles_to_extract, 0.0).asJson)
 
     })
@@ -117,34 +104,16 @@ object ListeningDistributions {
     bw.close()
   }
 
-  def subscriberNormalisedPercentileUserListensByYear(user_rec_interactions: Dataset[Row], spark: SparkSession): Unit = {
+  def subscriberNormalisedPercentileUserListensByYear(user_listens_per_year: DataFrame, sparkSession: SparkSession): Unit = {
     val percentiles_to_extract = Array(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
 
-    val df = user_rec_interactions
-      .select(col("_from"), col("years.*"))
-      .withColumn("user", substring(col("_from"), 7, 36))
-      .groupBy("user")
-      .agg(
-        sum(col("yr_2005")),
-        sum(col("yr_2006")),
-        sum(col("yr_2007")),
-        sum(col("yr_2008")),
-        sum(col("yr_2009")),
-        sum(col("yr_2010")),
-        sum(col("yr_2011")),
-        sum(col("yr_2012")),
-        sum(col("yr_2013")),
-        sum(col("yr_2014")),
-      )
-      .cache()
     var m = Map[String, Json]()
     (2005 until 2015).foreach(year => {
-      val year_subscribers_list = spark.read.option("header", "true")
+      val year_subscribers_list = sparkSession.read.option("header", "true")
         .csv(out_dir + "year_" + year.toString + "_subscribers.csv")
-        .withColumnRenamed("users", "user")
 
-      val percentiles = df
-        .join(year_subscribers_list, Seq("user"), "inner")
+      val percentiles = user_listens_per_year
+        .join(year_subscribers_list, Seq("users"), "inner")
         .stat.approxQuantile("sum(yr_" + year.toString + ")",
         percentiles_to_extract, 0.0)
 
@@ -158,31 +127,13 @@ object ListeningDistributions {
     bw.close()
   }
 
-  def saveSubscribedUsersByYear(user_rec_interactions: Dataset[Row]): Unit = {
+  def saveSubscribedUsersByYear(user_listens_per_year: DataFrame): Unit = {
     val subscription_checker = udf((sum_for_user: Long) => {
       sum_for_user > 0
     }, BooleanType)
 
-    val df1 = user_rec_interactions
-      .select("_from", "years.*")
-      .groupBy("_from")
-      .agg(
-        sum("yr_2005"),
-        sum("yr_2006"),
-        sum("yr_2007"),
-        sum("yr_2008"),
-        sum("yr_2009"),
-        sum("yr_2010"),
-        sum("yr_2011"),
-        sum("yr_2012"),
-        sum("yr_2013"),
-        sum("yr_2014"),
-      )
-      .persist(StorageLevel.DISK_ONLY)
-
     (2005 until 2015).foreach(year => {
-      df1.filter(subscription_checker(col("sum(yr_" + year.toString + ")")))
-        .withColumn("users", substring(col("_from"), 7, 36))
+      user_listens_per_year.filter(subscription_checker(col("sum(yr_" + year.toString + ")")))
         .select("users")
         .persist(StorageLevel.DISK_ONLY)
         .coalesce(1)

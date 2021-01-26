@@ -12,13 +12,14 @@ import org.apache.spark.storage.StorageLevel
 
 object CrossValidationFoldsGenerator {
 
+  var out_dir = ""
 
   def main(args: Array[String]) {
     // Turn off copious logging
     Logger.getLogger("org").setLevel(Level.ERROR)
     Logger.getLogger("akka").setLevel(Level.ERROR)
 
-    val out_dir = args(0)
+    out_dir = args(0)
 
     val spark: SparkSession =
       SparkSession
@@ -34,61 +35,60 @@ object CrossValidationFoldsGenerator {
     val users = getUsers(sc, spark)
       .select(col("_key").alias("user"))
 
-//    TODO Split by years
 
 
-//    TODO find active users by threshold
+    (2005 until 2013).foreach(year => {
+      val subscribed_users = spark.read
+        .option("header", "true")
+        .csv(out_dir + "year_" + year.toString + "_subscribers.csv")
 
+      val Array(train, test) = subscribed_users.randomSplit(Array(0.7, 0.3), 424356)
+      println("\nyear " + year.toString)
+      println("trainSize = " + train.count().toString)
+      println("testSize = " + test.count().toString)
 
-
-    val Array(train, test) = users.randomSplit(Array(0.7, 0.3), 424356)
-    println("\ntrainSize = " + train.count().toString)
-    println("\ntestSize = " + test.count().toString)
-    test.printSchema()
-    test.show(30)
-
-
-    train.coalesce(1)
-      .write
-      .mode(SaveMode.Overwrite)
-      .option("header", "true")
-      .csv(out_dir + "train.csv")
-
-    test.coalesce(1)
-      .write
-      .mode(SaveMode.Overwrite)
-      .option("header", "true")
-      .csv(out_dir + "test.csv")
-
-
-    val kFolds = MLUtils.kFold(train.rdd, 5, 4242)
-
-    var fold_num = 1
-    kFolds.foreach((fold: (RDD[Row],RDD[Row]))=>{
-      val fold_train = spark.createDataFrame(rowRDD = fold._1, new StructType().add("user", StringType, nullable = false))
-      val fold_validation = spark.createDataFrame(rowRDD = fold._2, new StructType().add("user", StringType, nullable = false))
-//      println("\nfold = " + fold_num.toString)
-//      println("trainSize = " + fold_train.count().toString)
-//      println("valSize = " + fold_validation.count().toString)
-
-      fold_train.coalesce(1)
+      train.coalesce(1)
         .write
         .mode(SaveMode.Overwrite)
         .option("header", "true")
-        .csv(out_dir + "cv_fold_" + fold_num.toString + "_train.csv")
+        .csv(out_dir + "train-test/year_" + year.toString + "_train.csv")
 
-      fold_validation.coalesce(1)
+      test.coalesce(1)
         .write
         .mode(SaveMode.Overwrite)
         .option("header", "true")
-        .csv(out_dir + "cv_fold_" + fold_num.toString + "_validation.csv")
+        .csv(out_dir + "train-test/year_" + year.toString + "_test.csv")
 
-      fold_num += 1
+      val kFolds = MLUtils.kFold(train.rdd, 5, 4242)
+
+      var fold_num = 1
+      kFolds.foreach((fold: (RDD[Row], RDD[Row])) => {
+        createTrainValForYear(fold, fold_num, year, spark)
+        fold_num += 1
+      })
     })
 
 
     // Stop the underlying SparkContext
     sc.stop
+  }
+
+  def createTrainValForYear(fold: (RDD[Row], RDD[Row]), fold_num: Int, year: Int, spark: SparkSession): Unit = {
+    val fold_train = spark.createDataFrame(rowRDD = fold._1, new StructType().add("user", StringType, nullable = false))
+    val fold_validation = spark.createDataFrame(rowRDD = fold._2, new StructType().add("user", StringType, nullable = false))
+
+    fold_train.coalesce(1)
+      .write
+      .mode(SaveMode.Overwrite)
+      .option("header", "true")
+      .csv(out_dir + "crossval/year_" + year.toString + "_cv_fold_" + fold_num.toString + "_train.csv")
+
+    fold_validation.coalesce(1)
+      .write
+      .mode(SaveMode.Overwrite)
+      .option("header", "true")
+      .csv(out_dir + "crossval/year_" + year.toString + "_cv_fold_" + fold_num.toString + "_validation.csv")
+
   }
 
 }
