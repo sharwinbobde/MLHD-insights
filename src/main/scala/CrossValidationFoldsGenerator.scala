@@ -36,7 +36,6 @@ object CrossValidationFoldsGenerator {
       .select(col("_key").alias("user"))
 
 
-
     (2005 until 2013).foreach(year => {
       val subscribed_users = spark.read
         .option("header", "true")
@@ -59,11 +58,15 @@ object CrossValidationFoldsGenerator {
         .option("header", "true")
         .csv(out_dir + "train-test/year_" + year.toString + "_test.csv")
 
+      //      Create Simple train and validation folds
+      createSimpleTrainValForYear(train, year)
+
+      //      Create Crossvalidation train and validation folds
       val kFolds = MLUtils.kFold(train.rdd, 5, 4242)
 
       var fold_num = 1
       kFolds.foreach((fold: (RDD[Row], RDD[Row])) => {
-        createTrainValForYear(fold, fold_num, year, spark)
+        createCrossvalTrainValForYear(fold, fold_num, year, spark)
         fold_num += 1
       })
     })
@@ -73,9 +76,9 @@ object CrossValidationFoldsGenerator {
     sc.stop
   }
 
-  def createTrainValForYear(fold: (RDD[Row], RDD[Row]), fold_num: Int, year: Int, spark: SparkSession): Unit = {
-    val fold_train = spark.createDataFrame(rowRDD = fold._1, new StructType().add("user", StringType, nullable = false))
-    val fold_validation = spark.createDataFrame(rowRDD = fold._2, new StructType().add("user", StringType, nullable = false))
+  def createCrossvalTrainValForYear(fold: (RDD[Row], RDD[Row]), fold_num: Int, year: Int, spark: SparkSession): Unit = {
+    val fold_train = spark.createDataFrame(rowRDD = fold._1, new StructType().add("users", StringType, nullable = false))
+    val fold_validation = spark.createDataFrame(rowRDD = fold._2, new StructType().add("users", StringType, nullable = false))
 
     fold_train.coalesce(1)
       .write
@@ -88,6 +91,23 @@ object CrossValidationFoldsGenerator {
       .mode(SaveMode.Overwrite)
       .option("header", "true")
       .csv(out_dir + "crossval/year_" + year.toString + "_cv_fold_" + fold_num.toString + "_validation.csv")
+
+  }
+
+  def createSimpleTrainValForYear(train: Dataset[Row], year: Int): Unit = {
+    val Array(fold_train, fold_validation) = train.randomSplit(Array(0.7, 0.3), 424356)
+
+    fold_train.coalesce(1)
+      .write
+      .mode(SaveMode.Overwrite)
+      .option("header", "true")
+      .csv(out_dir + "simple-train-val/year_" + year.toString + "_train.csv")
+
+    fold_validation.coalesce(1)
+      .write
+      .mode(SaveMode.Overwrite)
+      .option("header", "true")
+      .csv(out_dir + "simple-train-val/year_" + year.toString + "_validation.csv")
 
   }
 
