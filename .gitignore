@@ -1,10 +1,11 @@
 # Added by Sharwin Bobde
+.bsp
 .ivy2/*
 target/*
 .sbt/*
 .cache/*
 .gradle/*
-archived
+archived/*
 .scala_history
 spark-events/*
 *.orc
