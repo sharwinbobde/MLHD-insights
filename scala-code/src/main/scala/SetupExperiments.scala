@@ -3,7 +3,7 @@ import io.circe._
 import io.circe.syntax._
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.types.BooleanType
+import org.apache.spark.sql.types.{BooleanType, LongType, StringType, StructType}
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession, _}
 import org.apache.spark.storage.StorageLevel
 import utils.PercentileApprox._
@@ -11,6 +11,8 @@ import utils.PercentileApprox._
 import java.io.{BufferedWriter, File, FileWriter}
 
 object SetupExperiments {
+  val experiment_years = (2005 to 2012).toArray
+  val visualization_years = (2005 to 2014).toArray
   var out_dir = ""
 
   def main(args: Array[String]) {
@@ -31,78 +33,75 @@ object SetupExperiments {
     val sc = spark.sparkContext
 
     val arangoDBHandler = new ArangoDBHandler(spark)
+    val user_rec_interactions = arangoDBHandler.getUserToRecordingEdges
 
     addIDsToNodes(arangoDBHandler.getRecordings, arangoDBHandler.getArtists, arangoDBHandler.getRecordings)
 
-    //    //        from 2006 to 2018
-    //    (2006 until 2007).foreach(i => {
-    //      val year_str = i.toString
-    //      storeStatsForYear(year_str, user_rec_interactions)
-    //    })
-    //
-    //    //      Look at user's total listens every year
-    //    val user_listens_per_year = user_rec_interactions
-    //      .select(col("_from"), col("years.*"))
-    //      .withColumn("users", substring(col("_from"), 7, 36))
-    //      .groupBy("users")
-    //      .agg(
-    //        sum("yr_2005"),
-    //        sum("yr_2006"),
-    //        sum("yr_2007"),
-    //        sum("yr_2008"),
-    //        sum("yr_2009"),
-    //        sum("yr_2010"),
-    //        sum("yr_2011"),
-    //        sum("yr_2012"),
-    //        sum("yr_2013"),
-    //        sum("yr_2014"),
-    //      )
-    //
-    //    user_listens_per_year
-    //      .coalesce(1)
-    //      .write
-    //      .mode(SaveMode.Overwrite)
-    //      .option("header", "true")
-    //      .csv(out_dir + "user_listens_per_year.csv")
-    //
-    //
-    //
-    //    // Look at percentile distributions of listens for every year
-    //    percentileUserListensByYear(user_listens_per_year)
-    //
-    //
-    //    ////        get Subscribed uses by years
-    //    saveSubscribedUsersByYear(user_listens_per_year)
-    //
-    //    //         get percentile distributions of listens for every year normalised by the subscribers
-    //    subscriberNormalisedPercentileUserListensByYear(user_listens_per_year, spark)
+    //        from 2006 to 2018
+    visualization_years.foreach(i => {
+      val year_str = i.toString
+      storeStatsForYear(year_str, user_rec_interactions)
+    })
 
-    //    itemFrequenciesForMetrics(user_rec_interactions)
+    //      Look at user's total listens every year
+    val user_listens_per_year = user_rec_interactions
+      .select(col("user_id"), col("years.*"))
+      .groupBy("user_id")
+      .agg(
+        sum("yr_2005"),
+        sum("yr_2006"),
+        sum("yr_2007"),
+        sum("yr_2008"),
+        sum("yr_2009"),
+        sum("yr_2010"),
+        sum("yr_2011"),
+        sum("yr_2012"),
+        sum("yr_2013"),
+        sum("yr_2014"),
+      )
+
+    user_listens_per_year
+      .coalesce(1)
+      .write
+      .mode(SaveMode.Overwrite)
+      .option("header", "true")
+      .csv(out_dir + "user_listens_per_year.csv")
+
+    // Look at percentile distributions of listens for every year
+    percentileUserListensByYear(user_listens_per_year)
 
 
-    //    val item_listens_per_year = user_rec_interactions
-    //      .select(col("_to"), col("years.*"))
-    //      .withColumn("item", substring(col("_to"), 12, 36))
-    //      .groupBy("item")
-    //      .agg(
-    //        sum("yr_2005"),
-    //        sum("yr_2006"),
-    //        sum("yr_2007"),
-    //        sum("yr_2008"),
-    //        sum("yr_2009"),
-    //        sum("yr_2010"),
-    //        sum("yr_2011"),
-    //        sum("yr_2012"),
-    //        sum("yr_2013"),
-    //        sum("yr_2014"),
-    //      )
-    //
-    //    item_listens_per_year
-    //      .coalesce(1)
-    //      .write
-    //      .mode(SaveMode.Overwrite)
-    //      .option("header", "true")
-    //      .csv(out_dir + "item_listens_per_year.csv")
+    ////        get Subscribed uses by years
+    saveSubscribedUsersByYear(user_listens_per_year)
+
+    //         get percentile distributions of listens for every year normalised by the subscribers
+    subscriberNormalisedPercentileUserListensByYear(user_listens_per_year, spark)
+
+    itemFrequenciesForMetrics(user_rec_interactions)
+
+
+    val item_listens_per_year = user_rec_interactions
+      .select(col("rec_id"), col("years.*"))
+      .groupBy("rec_id")
+      .agg(
+        sum("yr_2005"),
+        sum("yr_2006"),
+        sum("yr_2007"),
+        sum("yr_2008"),
+        sum("yr_2009"),
+        sum("yr_2010"),
+        sum("yr_2011"),
+        sum("yr_2012"),
+        sum("yr_2013"),
+        sum("yr_2014"),
+      )
+
+    item_listens_per_year
+      .coalesce(1)
+      .write
+      .mode(SaveMode.Overwrite)
+      .option("header", "true")
+      .csv(out_dir + "item_listens_per_year.csv")
 
 
     // Stop the underlying SparContext
@@ -122,9 +121,8 @@ object SetupExperiments {
 
   def itemFrequenciesForMetrics(user_rec_interactions: Dataset[Row]): Unit = {
     user_rec_interactions
-      .select("_to", "years.*")
-      .withColumn("item", substring(col("_to"), 12, 36))
-      .groupBy("item")
+      .select("rec_id", "years.*")
+      .groupBy("rec_id")
       .agg(
         sum("yr_2005"),
         sum("yr_2006"),
@@ -148,13 +146,13 @@ object SetupExperiments {
     val percentiles_to_extract = Array(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
 
     var m = Map[String, Json]()
-    (2005 until 2015).foreach(yr => {
+    visualization_years.foreach(yr => {
       m += (yr.toString -> user_listens_per_year.stat
         .approxQuantile("sum(yr_" + yr.toString + ")",
           percentiles_to_extract, 0.0).asJson)
 
     })
-    val bw = new BufferedWriter(new FileWriter(new File("out_data/user_rec_listen_percentiles_by_year.json")))
+    val bw = new BufferedWriter(new FileWriter(new File(out_dir.substring(9) + "user_rec_listen_percentiles_by_year.json")))
     bw.write(m.asJson.spaces2SortKeys)
     bw.close()
   }
@@ -163,12 +161,15 @@ object SetupExperiments {
     val percentiles_to_extract = Array(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
 
     var m = Map[String, Json]()
-    (2005 until 2015).foreach(year => {
+    experiment_years.foreach(year => {
       val year_subscribers_list = sparkSession.read.option("header", "true")
+        .schema(
+          new StructType()
+            .add("user_id", LongType, nullable = false))
         .csv(out_dir + "year_" + year.toString + "_subscribers.csv")
 
       val percentiles = user_listens_per_year
-        .join(year_subscribers_list, Seq("users"), "inner")
+        .join(year_subscribers_list, Seq("user_id"), "inner")
         .stat.approxQuantile("sum(yr_" + year.toString + ")",
         percentiles_to_extract, 0.0)
 
@@ -177,7 +178,7 @@ object SetupExperiments {
     })
 
 
-    val bw = new BufferedWriter(new FileWriter(new File("out_data/normalised_user_rec_listen_percentiles_by_year.json")))
+    val bw = new BufferedWriter(new FileWriter(new File(out_dir.substring(9) + "normalised_user_rec_listen_percentiles_by_year.json")))
     bw.write(m.asJson.spaces2SortKeys)
     bw.close()
   }
@@ -187,9 +188,12 @@ object SetupExperiments {
       sum_for_user > 0
     }, BooleanType)
 
-    (2005 until 2015).foreach(year => {
-      user_listens_per_year.filter(subscription_checker(col("sum(yr_" + year.toString + ")")))
-        .select("users")
+    experiment_years.foreach(year => {
+      user_listens_per_year
+        .filter(
+          subscription_checker(col("sum(yr_" + year.toString + ")"))
+        )
+        .select("user_id")
         .persist(StorageLevel.DISK_ONLY)
         .coalesce(1)
         .write
