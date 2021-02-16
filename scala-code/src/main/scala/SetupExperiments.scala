@@ -11,8 +11,8 @@ import utils.PercentileApprox._
 import java.io.{BufferedWriter, File, FileWriter}
 
 object SetupExperiments {
-  val experiment_years = (2005 to 2012).toArray
-  val visualization_years = (2005 to 2014).toArray
+  val experiment_years: Array[Int] = (2005 to 2012).toArray
+  val visualization_years: Array[Int] = (2005 to 2014).toArray
   var out_dir = ""
 
   def main(args: Array[String]) {
@@ -37,7 +37,7 @@ object SetupExperiments {
 
     addIDsToNodes(arangoDBHandler.getRecordings, arangoDBHandler.getArtists, arangoDBHandler.getRecordings)
 
-    //        from 2006 to 2018
+
     visualization_years.foreach(i => {
       val year_str = i.toString
       storeStatsForYear(year_str, user_rec_interactions)
@@ -76,9 +76,6 @@ object SetupExperiments {
 
     //         get percentile distributions of listens for every year normalised by the subscribers
     subscriberNormalisedPercentileUserListensByYear(user_listens_per_year, spark)
-
-    itemFrequenciesForMetrics(user_rec_interactions)
-
 
     val item_listens_per_year = user_rec_interactions
       .select(col("rec_id"), col("years.*"))
@@ -119,29 +116,6 @@ object SetupExperiments {
     ArangoSpark.saveDF(recs_with_id, "recordings", WriteOptions(database = "MLHD_processing", method = WriteOptions.UPDATE))
   }
 
-  def itemFrequenciesForMetrics(user_rec_interactions: Dataset[Row]): Unit = {
-    user_rec_interactions
-      .select("rec_id", "years.*")
-      .groupBy("rec_id")
-      .agg(
-        sum("yr_2005"),
-        sum("yr_2006"),
-        sum("yr_2007"),
-        sum("yr_2008"),
-        sum("yr_2009"),
-        sum("yr_2010"),
-        sum("yr_2011"),
-        sum("yr_2012"),
-        sum("yr_2013"),
-        sum("yr_2014"),
-      )
-      .coalesce(1)
-      .write
-      .mode(SaveMode.Overwrite)
-      .option("header", "true")
-      .csv(out_dir + "item_frequencies.csv")
-  }
-
   def percentileUserListensByYear(user_listens_per_year: DataFrame): Unit = {
     val percentiles_to_extract = Array(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
 
@@ -165,7 +139,8 @@ object SetupExperiments {
       val year_subscribers_list = sparkSession.read.option("header", "true")
         .schema(
           new StructType()
-            .add("user_id", LongType, nullable = false))
+            .add("user_id", LongType, nullable = false)
+        )
         .csv(out_dir + "year_" + year.toString + "_subscribers.csv")
 
       val percentiles = user_listens_per_year

@@ -3,13 +3,13 @@ import org.apache.spark.mllib.util.MLUtils
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql._
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.types.{StringType, StructType}
+import org.apache.spark.sql.types.{LongType, StringType, StructType}
 import org.apache.spark.storage.StorageLevel
 
 import scala.collection.{breakOut, mutable}
 
 object DatasetDivision {
-
+  val experiment_years: Array[Int] = (2005 to 2012).toArray
   var out_dir = ""
 
   def main(args: Array[String]) {
@@ -32,14 +32,17 @@ object DatasetDivision {
 
     val arangoDBHandler = new ArangoDBHandler(spark)
     val users = arangoDBHandler.getUsers
-      .select("_key", "_id")
 
     val user_rec_interactions = arangoDBHandler.getUserToRecordingEdges
 
 
-    (2005 to 2012).foreach(year => {
+    experiment_years.foreach(year => {
       val subscribed_users = spark.read
         .option("header", "true")
+        .schema(
+          new StructType()
+            .add("user_id", LongType, nullable = false)
+        )
         .csv(out_dir + "year_" + year.toString + "_subscribers.csv")
 
       val Array(train, test) = subscribed_users.randomSplit(Array(0.7, 0.3), 424356)
@@ -71,25 +74,14 @@ object DatasetDivision {
         fold_num += 1
       })
 
-      // Save 3 sets of randomly selected test interactions with the set number also as seeds.
-      val sets = Array(1, 2, 3)
-      val test_users_with_id = test
-        .join(users
-          .withColumnRenamed("_key", "users"),
-          Seq("users"), "inner")
-
-      sets.foreach(set => {
+      // Save 3 sets of randomly selected test interactions
+      (1 to 3).foreach(set => {
         val test_interactions = user_rec_interactions
-          .select("_from", "_key")
-          .join(test_users_with_id
-            .withColumnRenamed("_id", "_from"),
-            Seq("_from"),
+          .select("user_id", "_key")
+          .join(test,
+            Seq("user_id"),
             "inner")
 
-        // TODO: don't do random split
-        //        val Array(test_train, test_test) = test_interactions
-        //          .select("_key")
-        //          .randomSplit(Array(0.5, 0.5), set)
         val (test_train, test_test) = splitTestInteractionsUniformlyAcrossUsers(test_interactions)
 
         test_train.coalesce(1)
@@ -106,10 +98,7 @@ object DatasetDivision {
 
         val test_test_user_item = user_rec_interactions
           .join(test_test, Seq("_key"), "inner")
-          .select("_from", "_to")
-          .withColumn("user", substring(col("_from"), 7, 36))
-          .withColumn("item", substring(col("_to"), 12, 36))
-          .select("user", "item")
+          .select("user_id", "rec_id")
 
         test_test_user_item
           .coalesce(1)
@@ -134,8 +123,8 @@ object DatasetDivision {
     })
 
     val test_data_train_test_split = test_interactions
-      .select("_from", "_key")
-      .groupBy("_from")
+      .select("user_id", "_key")
+      .groupBy("user_id")
       .agg(collect_list("_key").alias("keys"))
       .withColumn("split", splitting_udf(col("keys")))
       .withColumn("train", element_at(col("split"), 1))
@@ -155,8 +144,8 @@ object DatasetDivision {
   }
 
   def createCrossvalTrainValForYear(fold: (RDD[Row], RDD[Row]), fold_num: Int, year: Int, spark: SparkSession): Unit = {
-    val fold_train = spark.createDataFrame(rowRDD = fold._1, new StructType().add("users", StringType, nullable = false))
-    val fold_validation = spark.createDataFrame(rowRDD = fold._2, new StructType().add("users", StringType, nullable = false))
+    val fold_train = spark.createDataFrame(rowRDD = fold._1, new StructType().add("user_id", LongType, nullable = false))
+    val fold_validation = spark.createDataFrame(rowRDD = fold._2, new StructType().add("user_id", LongType, nullable = false))
 
     fold_train.coalesce(1)
       .write
