@@ -1,4 +1,3 @@
-import ArangoDBHandler._
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.mllib.util.MLUtils
 import org.apache.spark.rdd.RDD
@@ -31,10 +30,11 @@ object DatasetDivision {
 
     val sc = spark.sparkContext
 
-    val users = getUsers(sc, spark)
+    val arangoDBHandler = new ArangoDBHandler(spark)
+    val users = arangoDBHandler.getUsers
       .select("_key", "_id")
 
-    val user_rec_interactions = getUserToRecordingEdges(sc, spark)
+    val user_rec_interactions = arangoDBHandler.getUserToRecordingEdges
 
 
     (2005 to 2012).foreach(year => {

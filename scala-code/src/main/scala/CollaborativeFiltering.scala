@@ -1,4 +1,3 @@
-import ArangoDBHandler._
 import breeze.stats.distributions._
 import io.circe._
 import io.circe.syntax._
@@ -41,9 +40,10 @@ object CollaborativeFiltering {
 
     val sc = spark.sparkContext
 
-    val users = getUsers(sc, spark)
-    val recs = getRecordings(sc, spark)
-    val user_recs_interactions = getUserToRecordingEdges(sc, spark)
+    val arangoDBHandler = new ArangoDBHandler(spark)
+    val users = arangoDBHandler.getUsers
+    val recs = arangoDBHandler.getRecordings
+    val user_recs_interactions = arangoDBHandler.getUserToRecordingEdges
 
     //    join dataframes to make users and recs numeric
     //     Used for train-test

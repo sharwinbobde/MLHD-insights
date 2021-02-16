@@ -1,4 +1,4 @@
-import ArangoDBHandler._
+import com.arangodb.spark.{ArangoSpark, WriteOptions}
 import io.circe._
 import io.circe.syntax._
 import org.apache.log4j.{Level, Logger}
@@ -10,7 +10,7 @@ import utils.PercentileApprox._
 
 import java.io.{BufferedWriter, File, FileWriter}
 
-object ListeningDistributions {
+object SetupExperiments {
   var out_dir = ""
 
   def main(args: Array[String]) {
@@ -19,88 +19,90 @@ object ListeningDistributions {
     Logger.getLogger("akka").setLevel(Level.ERROR)
 
     out_dir = args(0)
-
     val spark: SparkSession =
       SparkSession
         .builder()
         .config("arangodb.hosts", "plb.sharwinbobde.com:8529") // system ip as docker ip won't be loopback
         .config("arangodb.user", "root")
         .config("arangodb.password", "Happy2Help!")
-        .appName("ListeningDistributions")
+        .appName("SetupExperiments")
         .getOrCreate()
 
     val sc = spark.sparkContext
-    val user_rec_interactions = getUserToRecordingEdges(sc, spark)
 
-//    //        from 2006 to 2018
-//    (2006 until 2007).foreach(i => {
-//      val year_str = i.toString
-//      storeStatsForYear(year_str, user_rec_interactions)
-//    })
-//
-//    //      Look at user's total listens every year
-//    val user_listens_per_year = user_rec_interactions
-//      .select(col("_from"), col("years.*"))
-//      .withColumn("users", substring(col("_from"), 7, 36))
-//      .groupBy("users")
-//      .agg(
-//        sum("yr_2005"),
-//        sum("yr_2006"),
-//        sum("yr_2007"),
-//        sum("yr_2008"),
-//        sum("yr_2009"),
-//        sum("yr_2010"),
-//        sum("yr_2011"),
-//        sum("yr_2012"),
-//        sum("yr_2013"),
-//        sum("yr_2014"),
-//      )
-//
-//    user_listens_per_year
-//      .coalesce(1)
-//      .write
-//      .mode(SaveMode.Overwrite)
-//      .option("header", "true")
-//      .csv(out_dir + "user_listens_per_year.csv")
-//
-//
-//
-//    // Look at percentile distributions of listens for every year
-//    percentileUserListensByYear(user_listens_per_year)
-//
-//
-//    ////        get Subscribed uses by years
-//    saveSubscribedUsersByYear(user_listens_per_year)
-//
-//    //         get percentile distributions of listens for every year normalised by the subscribers
-//    subscriberNormalisedPercentileUserListensByYear(user_listens_per_year, spark)
+    val arangoDBHandler = new ArangoDBHandler(spark)
 
-//    itemFrequenciesForMetrics(user_rec_interactions)
+    addIDsToNodes(arangoDBHandler.getRecordings, arangoDBHandler.getArtists, arangoDBHandler.getRecordings)
+
+    //    //        from 2006 to 2018
+    //    (2006 until 2007).foreach(i => {
+    //      val year_str = i.toString
+    //      storeStatsForYear(year_str, user_rec_interactions)
+    //    })
+    //
+    //    //      Look at user's total listens every year
+    //    val user_listens_per_year = user_rec_interactions
+    //      .select(col("_from"), col("years.*"))
+    //      .withColumn("users", substring(col("_from"), 7, 36))
+    //      .groupBy("users")
+    //      .agg(
+    //        sum("yr_2005"),
+    //        sum("yr_2006"),
+    //        sum("yr_2007"),
+    //        sum("yr_2008"),
+    //        sum("yr_2009"),
+    //        sum("yr_2010"),
+    //        sum("yr_2011"),
+    //        sum("yr_2012"),
+    //        sum("yr_2013"),
+    //        sum("yr_2014"),
+    //      )
+    //
+    //    user_listens_per_year
+    //      .coalesce(1)
+    //      .write
+    //      .mode(SaveMode.Overwrite)
+    //      .option("header", "true")
+    //      .csv(out_dir + "user_listens_per_year.csv")
+    //
+    //
+    //
+    //    // Look at percentile distributions of listens for every year
+    //    percentileUserListensByYear(user_listens_per_year)
+    //
+    //
+    //    ////        get Subscribed uses by years
+    //    saveSubscribedUsersByYear(user_listens_per_year)
+    //
+    //    //         get percentile distributions of listens for every year normalised by the subscribers
+    //    subscriberNormalisedPercentileUserListensByYear(user_listens_per_year, spark)
+
+    //    itemFrequenciesForMetrics(user_rec_interactions)
 
 
-    val item_listens_per_year = user_rec_interactions
-      .select(col("_to"), col("years.*"))
-      .withColumn("item", substring(col("_to"), 12, 36))
-      .groupBy("item")
-      .agg(
-        sum("yr_2005"),
-        sum("yr_2006"),
-        sum("yr_2007"),
-        sum("yr_2008"),
-        sum("yr_2009"),
-        sum("yr_2010"),
-        sum("yr_2011"),
-        sum("yr_2012"),
-        sum("yr_2013"),
-        sum("yr_2014"),
-      )
-
-    item_listens_per_year
-          .coalesce(1)
-          .write
-          .mode(SaveMode.Overwrite)
-          .option("header", "true")
-          .csv(out_dir + "item_listens_per_year.csv")
+    //    val item_listens_per_year = user_rec_interactions
+    //      .select(col("_to"), col("years.*"))
+    //      .withColumn("item", substring(col("_to"), 12, 36))
+    //      .groupBy("item")
+    //      .agg(
+    //        sum("yr_2005"),
+    //        sum("yr_2006"),
+    //        sum("yr_2007"),
+    //        sum("yr_2008"),
+    //        sum("yr_2009"),
+    //        sum("yr_2010"),
+    //        sum("yr_2011"),
+    //        sum("yr_2012"),
+    //        sum("yr_2013"),
+    //        sum("yr_2014"),
+    //      )
+    //
+    //    item_listens_per_year
+    //      .coalesce(1)
+    //      .write
+    //      .mode(SaveMode.Overwrite)
+    //      .option("header", "true")
+    //      .csv(out_dir + "item_listens_per_year.csv")
 
 
     // Stop the underlying SparContext
@@ -108,7 +110,17 @@ object ListeningDistributions {
     System.exit(0)
   }
 
-  def itemFrequenciesForMetrics(user_rec_interactions: Dataset[Row]): Unit ={
+  def addIDsToNodes(users: Dataset[Row], artists: Dataset[Row], recordings: Dataset[Row]): Unit = {
+    val users_with_id = users.withColumn("node_id", monotonically_increasing_id() * 10 + 1)
+    val artists_with_id = artists.withColumn("node_id", monotonically_increasing_id() * 10 + 2)
+    val recs_with_id = recordings.withColumn("node_id", monotonically_increasing_id() * 10 + 3)
+
+    ArangoSpark.saveDF(users_with_id, "users", WriteOptions(database = "MLHD_processing", method = WriteOptions.UPDATE))
+    ArangoSpark.saveDF(artists_with_id, "artists", WriteOptions(database = "MLHD_processing", method = WriteOptions.UPDATE))
+    ArangoSpark.saveDF(recs_with_id, "recordings", WriteOptions(database = "MLHD_processing", method = WriteOptions.UPDATE))
+  }
+
+  def itemFrequenciesForMetrics(user_rec_interactions: Dataset[Row]): Unit = {
     user_rec_interactions
       .select("_to", "years.*")
       .withColumn("item", substring(col("_to"), 12, 36))

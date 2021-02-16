@@ -4,8 +4,6 @@ import org.apache.log4j.{Level, Logger}
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 import org.apache.spark.sql.functions.{col, monotonically_increasing_id, sum}
 import org.apache.spark.storage.StorageLevel
-import ArangoDBHandler._
-
 import scala.util.parsing.json._
 import java.io.{BufferedWriter, File, FileWriter}
 
@@ -30,12 +28,13 @@ object GraphProperties {
 
     val sc = spark.sparkContext
 
-    val users = getUsers(sc, spark)
-    val recs = getRecordings(sc, spark)
-    val artists = getArtists(sc, spark)
-    val users_to_recs = getUserToRecordingEdges(sc, spark)
-    val users_to_artists = getUserToArtistEdges(sc, spark)
-    val artists_to_recs = getArtistToRecordingEdges(sc, spark)
+    val arangoDBHandler = new ArangoDBHandler(spark)
+    val users = arangoDBHandler.getUsers
+    val recs = arangoDBHandler.getRecordings
+    val artists = arangoDBHandler.getArtists
+    val users_to_recs = arangoDBHandler.getUserToRecordingEdges
+    val users_to_artists = arangoDBHandler.getUserToArtistEdges
+    val artists_to_recs = arangoDBHandler.getArtistToRecordingEdges
 
     var m = Map[String, Any]()
     m += ("users" -> users.count())
