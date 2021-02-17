@@ -3,29 +3,25 @@ from glob import glob
 import pandas as pd
 import recmetrics
 
+experiment_years = [2005, 2008, 2012]
+
 
 class Metrics:
     data_stem = "../../scala-code/data/processed/"
 
     def __init__(self):
         self.models = ["CF"]
-        self.years = range(2005, 2007)
+        self.years = experiment_years
         print('initializing Metrics utilities...')
-        for f in glob(self.data_stem + "item_frequencies.csv/part-*.csv"):
-            self.item_frequencies_all = pd.read_csv(f)
 
         self.catalogues = dict()
-        self.item_frequencies_per_year = dict()
         self.truths = dict()
-        for yr in [2005, 2007, 2012]:
-            print("here " + str(yr))
+        for yr in experiment_years:
+            print("initializing " + str(yr))
             self.catalogues[yr] = self.create_catelog(yr)
-            # item_frequencies depends on catalogues
-            self.item_frequencies_per_year[yr] = self.read_item_frequencies(yr)
 
             self.truths[yr] = dict()
             for set_no in [1, 2, 3]:
-                print("here")
                 self.truths[yr][set_no] = self.read_ground_truth(yr, set_no)
 
         print('Ready!')
@@ -35,7 +31,7 @@ class Metrics:
                 self.data_stem + "output/year_" + str(year) + "_" + model + "_set_" + str(set_num) + ".csv/part-*.csv"):
             return pd.read_csv(f) \
                 .query("rank <= " + str(k)) \
-                .groupby("user")['item'] \
+                .groupby("user_id")['rec_id'] \
                 .apply(list) \
                 .to_dict()
 
@@ -43,50 +39,56 @@ class Metrics:
         for f in glob(self.data_stem + "holdout/year_" + str(year) + "_test_test_interactions_user-item_set_" + str(
                 set_num) + ".csv/part-*.csv"):
             return pd.read_csv(f) \
-                .groupby("user")['item'] \
+                .groupby("user_id")['rec_id'] \
                 .apply(list) \
                 .to_dict()
 
-    def read_item_frequencies(self, year: int) -> dict:
-        catalogue = self.catalogues[year]
-        df = self.item_frequencies_all \
-            .rename(columns={"sum(yr_" + str(year) + ")": "count"}) \
-            [["item", "count"]]
-
-        df = df[df['item'].isin(list(catalogue.keys()))] \
-            .set_index('item') \
-            ["count"]
-
-        return df.to_dict()
-
     def create_catelog(self, year: int) -> dict:
-        for f in glob(
-                self.data_stem + "item_listens_per_year.csv/part-*.csv"):
+        for f in glob(self.data_stem + "item_listens_per_year.csv/part-*.csv"):
             df = pd.read_csv(f) \
                 .rename(columns={"sum(yr_" + str(year) + ")": "count"}) \
                 .query("count > 0") \
-                .set_index('item') \
+                .set_index('rec_id') \
                 ["count"]
 
             return df.to_dict()
 
     # ========================== Metrics ======================
 
-    def mark(self, recs: dict, year: int, set_num: int, k: int):
+    def NaN_Proportion(self, recs: dict, year: int, set_num: int):
         truth = self.truths[year][set_num]
-        df_truth = pd.DataFrame(truth.items(), columns=["user", 'truth'])
-        df_recs = pd.DataFrame(recs.items(), columns=["user", 'recommended'])
+        df_truth = pd.DataFrame(truth.items(), columns=["user_id", 'truth'])
+        df_recs = pd.DataFrame(recs.items(), columns=["user_id", 'recommended'])
 
-        df = df_truth.join(df_recs.set_index('user'), on="user")
+        df = df_truth.join(df_recs.set_index('user_id'), on="user_id")
         df['truth_len'] = df['truth'].str.len()
         df['recommended_len'] = df['recommended'].str.len()
-        # print(df)
         len_nan = df.recommended_len.isna().sum()
         len_tot = df.recommended_len.size
         print("NaN count: " + str(len_nan))
         print("total records: " + str(len_tot))
-        print("% : " + str(len_nan / len_tot * 100))
-        # recmetrics.mark()
+        return len_nan / len_tot
+
+    def mark(self, recs: dict, year: int, set_num: int, k: int):
+        truth = self.truths[year][set_num]
+        df_truth = pd.DataFrame(truth.items(), columns=["user_id", 'truth'])
+        df_recs = pd.DataFrame(recs.items(), columns=["user_id", 'recommended'])
+
+        df = df_truth.join(df_recs.set_index('user_id'), on="user_id") \
+            [["truth", "recommended"]]
+        df.loc[df['recommended'].isnull(), ['recommended']] = df.loc[df['recommended'].isnull(), 'recommended'] \
+            .apply(lambda x: [])
+        return recmetrics.mark(df.truth.tolist(), df.recommended.tolist(), k)
+
+    def mark_filter_valid(self, recs: dict, year: int, set_num: int, k: int):
+        truth = self.truths[year][set_num]
+        df_truth = pd.DataFrame(truth.items(), columns=["user_id", 'truth'])
+        df_recs = pd.DataFrame(recs.items(), columns=["user_id", 'recommended'])
+
+        df = df_truth.join(df_recs.set_index('user_id'), on="user_id") \
+            [["truth", "recommended"]] \
+            .query("recommended.notnull() ")
+        return recmetrics.mark(df.truth.tolist(), df.recommended.tolist(), k)
 
     def personalization(self, recs: dict):
         """
@@ -97,27 +99,43 @@ class Metrics:
         """
         arr = list(recs.values())
         metric = recmetrics.personalization(arr)
-        print('------ Personalization')
-        print(metric)
+        return metric
 
     def novelty(self, recs: dict, year: int, k: int):
         """
         assumes numeric item codes
         """
         arr = list(recs.values())
-        pop = self.read_item_frequencies(year)
+        pop = self.catalogues[year]
         metric, _ = recmetrics.novelty(arr, pop, len(arr), k)
         print('------ Novelty')
         print(metric)
 
-    def coverage(self):
-        # prediction_coverage
-        # TODO
-        pass
+    def coverage(self, recs: dict, year: int):
+        """
+        Coverage in percentage
+        :param recs: recommendations dictionary
+        :param year: year of experiment
+        :return:
+        """
+        arr = list(recs.values())
+        catalogue = list(self.catalogues[year].keys())
+        return recmetrics.prediction_coverage(arr, catalogue)
 
     def familiarity(self):
         # TODO
         pass
+
+    def get_all_metrics(self, recs: dict, year: int, set_num: int, k: int):
+        m = {}
+        m['MAR@' + str(K)] = self.mark(recs, year, set_, k)
+        m['MAR_filtered@' + str(K)] = self.mark_filter_valid(recs, year, set_, k)
+        m['Pers@' + str(K)] = self.personalization(recs)
+        m['Nov@' + str(K)] = self.personalization(recs)
+        m['NaN_Prop@' + str(K)] = self.NaN_Proportion(recs, year, set_)
+        m['Cov@' + str(K)] = self.coverage(recs, year)
+        # m['Fam@' + str(K)] = metrics.familiarity(recs)
+        return m
 
 
 if __name__ == '__main__':
@@ -127,9 +145,9 @@ if __name__ == '__main__':
     set_ = 3
     model = "CF"
 
-    for yr in [2005, 2007, 2012]:
-        print("year: " + str(yr))
-        recs_dict = metrics.read_recommendations_file(yr, model, set_, K)
-        metrics.mark(recs_dict, yr, set_, K)
-
+    for yr in experiment_years:
+        print("year: " + str(yr) + " ==================================")
+        recs = metrics.read_recommendations_file(yr, model, set_, K)
+        m = metrics.get_all_metrics(recs, yr, set_, K)
+        print(m)
     print("DONE")
