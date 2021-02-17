@@ -65,9 +65,9 @@ class Metrics:
         df['recommended_len'] = df['recommended'].str.len()
         len_nan = df.recommended_len.isna().sum()
         len_tot = df.recommended_len.size
-        print("NaN count: " + str(len_nan))
-        print("total records: " + str(len_tot))
-        return len_nan / len_tot
+        # print("NaN count: " + str(len_nan))
+        # print("total records: " + str(len_tot))
+        return len_nan / len_tot, len_nan, len_tot
 
     def mark(self, recs: dict, year: int, set_num: int, k: int):
         truth = self.truths[year][set_num]
@@ -132,7 +132,7 @@ class Metrics:
         m['MAR_filtered@' + str(K)] = self.mark_filter_valid(recs, year, set_, k)
         m['Pers@' + str(K)] = self.personalization(recs)
         m['Nov@' + str(K)] = self.personalization(recs)
-        m['NaN_Prop@' + str(K)] = self.NaN_Proportion(recs, year, set_)
+        m['NaN_Prop@' + str(K)], _, _ = self.NaN_Proportion(recs, year, set_)
         m['Cov@' + str(K)] = self.coverage(recs, year)
         # m['Fam@' + str(K)] = metrics.familiarity(recs)
         return m
