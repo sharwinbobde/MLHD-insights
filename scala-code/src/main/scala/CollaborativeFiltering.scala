@@ -2,13 +2,8 @@ import breeze.stats.distributions._
 import io.circe._
 import io.circe.syntax._
 import org.apache.log4j.{Level, Logger}
-import org.apache.spark.ml.evaluation.RegressionEvaluator
-import org.apache.spark.ml.recommendation.{ALS, ALSModel}
-import org.apache.spark.sql.functions.{col, posexplode, udf}
-import org.apache.spark.sql.types.IntegerType
 import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
-import org.apache.spark.storage.StorageLevel
-import utils.{CF_selected_hyperparms, RandomGridGenerator}
+import utils.{CF_selected_hyperparms, CollabFilteringUtils, RandomGridGenerator}
 
 import java.io.{BufferedWriter, File, FileWriter}
 import scala.collection.mutable.ArrayBuffer
@@ -22,6 +17,11 @@ object CollaborativeFiltering {
   val rating_lower_threshold = 25
 
   var out_dir = ""
+
+  val CF_utils: CollabFilteringUtils = new CollabFilteringUtils(
+    "user_id",
+    "rec_id",
+    ratingCol)
 
   def main(args: Array[String]) {
     // Turn off copious logging
@@ -46,40 +46,10 @@ object CollaborativeFiltering {
     val recs = arangoDBHandler.getRecordings
     val user_recs_interactions = arangoDBHandler.getUserToRecordingEdges
 
-    //    join dataframes to make users and recs numeric
-    //     Used for train-test
-    //    val interactions_preprocessed = preprocessEdges(user_recs_interactions, users, recs)
-    //    interactions_preprocessed.printSchema()
-
-
-    //    CrossValidation for hyperparameter tuning
-//        hyperparameterTuning(user_recs_interactions, users, recs, spark)
+    // CrossValidation for hyperparameter tuning
+    hyperparameterTuning(user_recs_interactions, users, recs, spark)
 
     testRecoomendationsGeneration(user_recs_interactions, users, recs, spark)
-
-
-
-    //    val Array(train, test) = interactions_preprocessed.randomSplit(Array(0.8, 0.2))
-
-    //    // Get predictions
-    //    val model = getCFModel(train)
-    //    var predictions = getPredictions(model, test)
-    //    predictions = postprocessPredictions(predictions, users, recs)
-    //    predictions.printSchema()
-    //    predictions.show(50)
-    //
-    //    //    Get training error
-    //    val rmse = getRMSE(model, predictions)
-    //    println(s"Root-mean-square error = $rmse")
-
-
-    ////    Get recommendations
-    //    val model_recommend = getCFModel(interactions_preprocessed)
-    //    var recommendations = getRecommendations(model_recommend, test, items_to_recommend)
-    //    recommendations = postprocessRecommendations(recommendations, users, recs)
-    //
-    //    recommendations.printSchema()
-    //    recommendations.show(50)
 
     // Stop the underlying SparkContext
     sc.stop
@@ -99,7 +69,7 @@ object CollaborativeFiltering {
         .option("header", "true")
         .csv(out_dir + "holdout/year_" + year.toString + "_test.csv")
 
-      val train_interactions = preprocessEdges(user_recs_interactions, train_user_ids, year)
+      val train_interactions = CF_utils.preprocessEdges(user_recs_interactions, train_user_ids, year, rating_lower_threshold)
       Array(1,2,3).foreach(set => {
         println("set " + set.toString)
 
@@ -110,23 +80,23 @@ object CollaborativeFiltering {
         val test_test_interaction_keys = sparkSession.read
           .option("header", "true")
           .csv(out_dir + "holdout/year_" + year.toString + "_test_test_interactions_set_" + set.toString + ".csv")
-        val test_train_interactions = preprocessEdges(
+        val test_train_interactions = CF_utils.preprocessEdges(
           user_recs_interactions.join(test_train_interaction_keys, Seq("_key"), "inner"),
-          test_user_ids, year)
+          test_user_ids, year, rating_lower_threshold)
 
 //        val test_test_interactions = preprocessEdges(
 //          user_recs_interactions.join(test_test_interaction_keys, Seq("_key"), "inner"),
 //          users, recs, year)
 
-        val model = getCFModel(train_interactions.union(test_train_interactions),
+        val model = CF_utils.getCFModel(train_interactions.union(test_train_interactions),
           hyperparameters.getOrElse("latentFactors", -1).asInstanceOf[Int],
           hyperparameters.getOrElse("maxItr", -1).asInstanceOf[Int],
           hyperparameters.getOrElse("regularizingParam", -1.0).asInstanceOf[Double],
           hyperparameters.getOrElse("alpha", -1.0).asInstanceOf[Double])
 
         // Get recommendations :)
-        val raw_recommendations = getRecommendations(model, test_user_ids, 100)
-        val recommendations = postprocessRecommendations(raw_recommendations)
+        val raw_recommendations = CF_utils.getRecommendations(model, test_user_ids, 100)
+        val recommendations = CF_utils.postprocessRecommendations(raw_recommendations)
 
         recommendations
           .coalesce(1)
@@ -171,19 +141,19 @@ object CollaborativeFiltering {
             .option("header", "true")
             .csv(out_dir + "crossval/year_" + year.toString + "_cv_fold_" + fold_num.toString + "_train.csv")
 
-          val train_interactions = preprocessEdges(user_recs_interactions, train_user_ids, year)
+          val train_interactions = CF_utils.preprocessEdges(user_recs_interactions, train_user_ids, year, rating_lower_threshold)
           val Array(rand_train, rand_validation) = train_interactions.randomSplit(Array(0.7, 0.3), 4242)
 
           //  Get predictions
           // using getOrElse("param", -1) because need to use match instead, will give error if -1 is selected... workaround :)
-          val model = getCFModel(rand_train,
+          val model = CF_utils.getCFModel(rand_train,
             hyperparameters.getOrElse("latentFactors", -1).asInstanceOf[Int],
             hyperparameters.getOrElse("maxItr", -1).asInstanceOf[Int],
             hyperparameters.getOrElse("regularizingParam", -1.0).asInstanceOf[Double],
             hyperparameters.getOrElse("alpha", -1.0).asInstanceOf[Double])
 
           val predictions = model.transform(rand_validation)
-          hyperparameter_rmses += getRMSE(predictions)
+          hyperparameter_rmses += CF_utils.getRMSE(predictions)
         })
         val mean_rmse = hyperparameter_rmses.sum / hyperparameter_rmses.size
 
@@ -202,65 +172,5 @@ object CollaborativeFiltering {
       bw.write(year_hyperparameter_with_error_array.toArray.asJson.spaces2SortKeys)
       bw.close()
     })
-  }
-
-  def preprocessEdges(interactions: Dataset[Row], user_ids: Dataset[Row], selected_year: Int): Dataset[Row] = {
-    interactions
-      .select("user_id", "rec_id", "years.*")
-      .withColumnRenamed("yr_" + selected_year.toString, "rating")
-      .filter("rating > " + rating_lower_threshold.toString)
-      .join(user_ids, Seq("user_id"), joinType = "inner")
-      .select("user_id", "rec_id", "rating")
-      .persist(StorageLevel.DISK_ONLY)
-  }
-
-  def getCFModel(train: Dataset[Row], latentFactors: Int, maxItr: Int, regularizingParam: Double, alpha: Double): ALSModel = {
-    //  Collaborative Filtering
-    val als = new ALS()
-      .setRank(latentFactors)
-      .setMaxIter(maxItr)
-      .setRegParam(regularizingParam)
-      .setAlpha(alpha)
-      .setImplicitPrefs(true)
-            .setNonnegative(true)
-      .setUserCol("user_id")
-      .setItemCol("rec_id")
-      .setRatingCol(ratingCol)
-      .setColdStartStrategy("drop")
-      .setSeed(69)
-
-    als.fit(train)
-  }
-
-  def getRMSE(predictions: Dataset[Row]): Double = {
-    new RegressionEvaluator()
-      .setMetricName("rmse")
-      .setLabelCol(ratingCol)
-      .setPredictionCol("prediction")
-      .evaluate(predictions)
-
-  }
-
-  def getRecommendations(model: ALSModel, user_ids: Dataset[Row], num_items: Int): Dataset[Row] = {
-    model.recommendForUserSubset(user_ids, num_items)
-  }
-
-  def getPredictions(model: ALSModel, test: Dataset[Row]): Dataset[Row] = {
-    model.transform(test)
-  }
-
-  def postprocessRecommendations(recommendations: Dataset[Row]): Dataset[Row] = {
-    recommendations.select(col("user_id"), posexplode(col("recommendations")))
-      .select("user_id", "pos", "col.*")
-      .withColumn("rank", col("pos") + 1)
-//      .join(recs.select(col("rec_id"), col("_key").as("item")), "rec_id")
-//      .join(users.select(col("user_id"), col("_key").alias("user")), "user_id")
-      .select("user_id", "rank", "rec_id", "rating")
-      .orderBy("user_id", "rank")
-  }
-
-  def postprocessPredictions(predictions: Dataset[Row]): Dataset[Row] = {
-    predictions
-      .orderBy("user_id", "rec_id")
   }
 }
