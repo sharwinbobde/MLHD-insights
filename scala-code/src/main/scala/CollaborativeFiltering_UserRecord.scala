@@ -8,11 +8,11 @@ import utils.{CF_selected_hyperparms, CollabFilteringUtils, RandomGridGenerator}
 import java.io.{BufferedWriter, File, FileWriter}
 import scala.collection.mutable.ArrayBuffer
 
-object CollaborativeFiltering {
+object CollaborativeFiltering_UserRecord {
 
   val ratingCol = "rating"
   val items_to_recommend = 10
-  val experiment_years: Array[Int] = Array(2005, 2008, 2012)
+  val experiment_years: Array[Int] = Array(2005)
 
   val rating_lower_threshold = 25
 
@@ -22,6 +22,8 @@ object CollaborativeFiltering {
     "user_id",
     "rec_id",
     ratingCol)
+
+  val RandomGrid_samples = 10
 
   def main(args: Array[String]) {
     // Turn off copious logging
@@ -112,7 +114,7 @@ object CollaborativeFiltering {
   def hyperparameterTuning(user_recs_interactions: Dataset[Row], users: Dataset[Row], recs: Dataset[Row], sparkSession: SparkSession): Unit = {
     experiment_years.foreach(year => {
       println("year " + year.toString)
-      val randGrid = new RandomGridGenerator(1)
+      val randGrid = new RandomGridGenerator(RandomGrid_samples)
         .addDistr("latentFactors", (5 to 20).toArray)
         .addDistr("maxItr", (5 to 25).toArray)
         .addDistr("regularizingParam", Uniform(0.001, 2))
@@ -120,10 +122,6 @@ object CollaborativeFiltering {
         .getSamples()
 
       // TODO Create df with hyper params
-
-
-      // TODO read and store crossval-folds
-
 
       // TODO create udf to find mean_RMSE error and add to df
 
@@ -168,7 +166,7 @@ object CollaborativeFiltering {
         year_hyperparameter_with_error_array += json.asJson
       })
 
-      val bw = new BufferedWriter(new FileWriter(new File(out_dir + "hyperparameter-tuning/CollabFiltering_year_" + year.toString + ".json")))
+      val bw = new BufferedWriter(new FileWriter(new File(out_dir.substring(9) + "hyperparameter-tuning/CollabFiltering_year_" + year.toString + ".json")))
       bw.write(year_hyperparameter_with_error_array.toArray.asJson.spaces2SortKeys)
       bw.close()
     })
