@@ -51,14 +51,14 @@ object CollaborativeFiltering_UserRecord {
     // CrossValidation for hyperparameter tuning
     hyperparameterTuning(user_recs_interactions, spark)
 
-    testRecoomendationsGeneration(user_recs_interactions, spark)
+    testRecommendationsGeneration(user_recs_interactions, spark)
 
     // Stop the underlying SparkContext
     sc.stop
     System.exit(0)
   }
 
-  def testRecoomendationsGeneration(user_recs_interactions: Dataset[Row], sparkSession: SparkSession): Unit = {
+  def testRecommendationsGeneration(user_recs_interactions: Dataset[Row], sparkSession: SparkSession): Unit = {
     println("Generatinng recommendations for test users.")
     experiment_years.foreach(year => {
       println("year " + year.toString)
