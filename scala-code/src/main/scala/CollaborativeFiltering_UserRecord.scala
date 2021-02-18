@@ -49,16 +49,16 @@ object CollaborativeFiltering_UserRecord {
     val user_recs_interactions = arangoDBHandler.getUserToRecordingEdges
 
     // CrossValidation for hyperparameter tuning
-    hyperparameterTuning(user_recs_interactions, users, recs, spark)
+    hyperparameterTuning(user_recs_interactions, spark)
 
-    testRecoomendationsGeneration(user_recs_interactions, users, recs, spark)
+    testRecoomendationsGeneration(user_recs_interactions, spark)
 
     // Stop the underlying SparkContext
     sc.stop
     System.exit(0)
   }
 
-  def testRecoomendationsGeneration(user_recs_interactions: Dataset[Row], users: Dataset[Row], recs: Dataset[Row], sparkSession: SparkSession): Unit = {
+  def testRecoomendationsGeneration(user_recs_interactions: Dataset[Row], sparkSession: SparkSession): Unit = {
     println("Generatinng recommendations for test users.")
     experiment_years.foreach(year => {
       println("year " + year.toString)
@@ -105,13 +105,13 @@ object CollaborativeFiltering_UserRecord {
           .write
           .mode(SaveMode.Overwrite)
           .option("header", "true")
-          .csv(out_dir + "output/year_" + year.toString + "_CF_set_" + set.toString + ".csv")
+          .csv(out_dir + "output/year_" + year.toString + "_CF_user-rec_set_" + set.toString + ".csv")
       })
     })
 
   }
 
-  def hyperparameterTuning(user_recs_interactions: Dataset[Row], users: Dataset[Row], recs: Dataset[Row], sparkSession: SparkSession): Unit = {
+  def hyperparameterTuning(user_recs_interactions: Dataset[Row], sparkSession: SparkSession): Unit = {
     experiment_years.foreach(year => {
       println("year " + year.toString)
       val randGrid = new RandomGridGenerator(RandomGrid_samples)
@@ -166,7 +166,7 @@ object CollaborativeFiltering_UserRecord {
         year_hyperparameter_with_error_array += json.asJson
       })
 
-      val bw = new BufferedWriter(new FileWriter(new File(out_dir.substring(9) + "hyperparameter-tuning/CollabFiltering_year_" + year.toString + ".json")))
+      val bw = new BufferedWriter(new FileWriter(new File(out_dir.substring(9) + "hyperparameter-tuning/CollabFiltering_user-rec_year_" + year.toString + ".json")))
       bw.write(year_hyperparameter_with_error_array.toArray.asJson.spaces2SortKeys)
       bw.close()
     })
