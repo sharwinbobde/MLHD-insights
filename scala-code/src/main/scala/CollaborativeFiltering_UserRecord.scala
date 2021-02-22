@@ -11,7 +11,7 @@ import scala.collection.mutable.ArrayBuffer
 object CollaborativeFiltering_UserRecord {
 
   val ratingCol = "rating"
-  val items_to_recommend = 10
+  val items_to_recommend = 100
   val experiment_years: Array[Int] = Array(2005)
 
   val rating_lower_threshold = 25
@@ -44,8 +44,6 @@ object CollaborativeFiltering_UserRecord {
     val sc = spark.sparkContext
 
     val arangoDBHandler = new ArangoDBHandler(spark)
-    val users = arangoDBHandler.getUsers
-    val recs = arangoDBHandler.getRecordings
     val user_recs_interactions = arangoDBHandler.getUserToRecordingEdges
 
     // CrossValidation for hyperparameter tuning
@@ -79,17 +77,9 @@ object CollaborativeFiltering_UserRecord {
           .option("header", "true")
           .csv(out_dir + "holdout/year_" + year.toString + "_test_train_interactions_set_" + set.toString + ".csv")
 
-        val test_test_interaction_keys = sparkSession.read
-          .option("header", "true")
-          .csv(out_dir + "holdout/year_" + year.toString + "_test_test_interactions_set_" + set.toString + ".csv")
-        val test_train_interactions = CF_utils.preprocessEdges(
+      val test_train_interactions = CF_utils.preprocessEdges(
           user_recs_interactions.join(test_train_interaction_keys, Seq("_key"), "inner"),
           test_user_ids, year, rating_lower_threshold)
-
-//        val test_test_interactions = preprocessEdges(
-//          user_recs_interactions.join(test_test_interaction_keys, Seq("_key"), "inner"),
-//          users, recs, year)
-
         val model = CF_utils.getCFModel(train_interactions.union(test_train_interactions),
           hyperparameters.getOrElse("latentFactors", -1).asInstanceOf[Int],
           hyperparameters.getOrElse("maxItr", -1).asInstanceOf[Int],
@@ -97,7 +87,7 @@ object CollaborativeFiltering_UserRecord {
           hyperparameters.getOrElse("alpha", -1.0).asInstanceOf[Double])
 
         // Get recommendations :)
-        val raw_recommendations = CF_utils.getRecommendations(model, test_user_ids, 100)
+        val raw_recommendations = CF_utils.getRecommendations(model, test_user_ids, items_to_recommend)
         val recommendations = CF_utils.postprocessRecommendations(raw_recommendations)
 
         recommendations

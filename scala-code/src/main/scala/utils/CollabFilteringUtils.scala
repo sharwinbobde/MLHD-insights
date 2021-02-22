@@ -45,16 +45,16 @@ class CollabFilteringUtils(val user_colname: String, val item_colname: String, v
   }
 
   def postprocessRecommendations(recommendations: Dataset[Row]): Dataset[Row] = {
-    recommendations.select(col("user_id"), posexplode(col("recommendations")))
-      .select("user_id", "pos", "col.*")
+    recommendations.select(col(user_colname), posexplode(col("recommendations")))
+      .select(user_colname, "pos", "col.*")
       .withColumn("rank", col("pos") + 1)
-      .select("user_id", "rank", "rec_id", "rating")
-      .orderBy("user_id", "rank")
+      .select(user_colname, "rank", item_colname, "rating")
+      .orderBy(user_colname, "rank")
   }
 
   def postprocessPredictions(predictions: Dataset[Row]): Dataset[Row] = {
     predictions
-      .orderBy("user_id", "rec_id")
+      .orderBy(user_colname, item_colname)
   }
 
   def preprocessEdges(interactions: Dataset[Row], user_ids: Dataset[Row], selected_year: Int, rating_lower_threshold: Int): Dataset[Row] = {
