@@ -20,7 +20,9 @@ MENU="Choose one of the following options:"
 OPTIONS=(1 "Setup Experiments"
          2 "Stats for Graph Properties"
          3 "Divide Dataset for Experiments"
-         4 "User-Record Collaborative Filtering")
+         4 "User-Record Collaborative Filtering"
+         5 "User-Artist Collaborative Filtering"
+         )
 
 CHOICE=$(dialog --clear \
                 --backtitle "$BACKTITLE" \
@@ -43,6 +45,9 @@ case $CHOICE in
             ;;
         4)
             mainClass=CollaborativeFiltering_UserRecord
+            ;;
+        5)
+            mainClass=CollaborativeFiltering_UserArtist
             ;;
         *)
             exit 0
