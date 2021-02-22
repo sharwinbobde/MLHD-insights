@@ -33,11 +33,12 @@ object SetupExperiments {
     val sc = spark.sparkContext
 
     val arangoDBHandler = new ArangoDBHandler(spark)
+
+    addIDsToNodes(arangoDBHandler.getUsers, arangoDBHandler.getArtists, arangoDBHandler.getRecordings)
+    print("added node IDs")
+    // TODO have to run twice because need new user data for edges.... change ArangoDBHandler
     val user_rec_interactions = arangoDBHandler.getUserToRecordingEdges
-
-    addIDsToNodes(arangoDBHandler.getRecordings, arangoDBHandler.getArtists, arangoDBHandler.getRecordings)
-
-
+    user_rec_interactions.printSchema()
     visualization_years.foreach(i => {
       val year_str = i.toString
       storeStatsForYear(year_str, user_rec_interactions)
