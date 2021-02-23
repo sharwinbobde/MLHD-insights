@@ -31,9 +31,9 @@ object DatasetDivision {
     val sc = spark.sparkContext
 
     val arangoDBHandler = new ArangoDBHandler(spark)
-    val users = arangoDBHandler.getUsers
+    val users = arangoDBHandler.getUsers()
 
-    val user_rec_interactions = arangoDBHandler.getUserToRecordingEdges
+    val user_rec_interactions = arangoDBHandler.getUserToRecordingEdges()
 
 
     experiment_years.foreach(year => {

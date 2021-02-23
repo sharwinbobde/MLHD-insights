@@ -14,8 +14,8 @@ class ArangoDBHandler(val spark: SparkSession) {
   private var artists_to_recs: Dataset[Row] = null
 
   // ====================================== Nodes ======================================
-  def getUsers: Dataset[Row] = {
-    if (users == null) {
+  def getUsers(force_reread: Boolean = false): Dataset[Row] = {
+    if (force_reread || users == null) {
       val users_rdd = ArangoSpark.load[Node](spark.sparkContext,
         "users",
         ReadOptions("MLHD_processing", collection = "users"))
@@ -27,8 +27,8 @@ class ArangoDBHandler(val spark: SparkSession) {
     }
   }
 
-  def getArtists: Dataset[Row] = {
-    if (artists == null) {
+  def getArtists(force_reread: Boolean = false): Dataset[Row] = {
+    if (force_reread || artists == null) {
       val artists_rdd = ArangoSpark.load[Node](spark.sparkContext,
         "artists",
         ReadOptions("MLHD_processing", collection = "artists"))
@@ -40,8 +40,8 @@ class ArangoDBHandler(val spark: SparkSession) {
     }
   }
 
-  def getRecordings: Dataset[Row] = {
-    if (recs == null) {
+  def getRecordings(force_reread: Boolean = false): Dataset[Row] = {
+    if (force_reread || recs == null) {
       val recs_rdd = ArangoSpark.load[Node](spark.sparkContext,
         "recordings",
         ReadOptions("MLHD_processing", collection = "recordings"))
@@ -55,19 +55,19 @@ class ArangoDBHandler(val spark: SparkSession) {
 
 
   // ====================================== Edges ======================================
-  def getUserToRecordingEdges: Dataset[Row] = {
-    if (users_to_recs == null) {
+  def getUserToRecordingEdges(force_reread: Boolean = false): Dataset[Row] = {
+    if (force_reread || users_to_recs == null) {
       val edge_rdd = ArangoSpark
         .load[UserToRecordingOrArtistRelation](spark.sparkContext,
           "users_to_recordings",
           ReadOptions("MLHD_processing", collection = "users_to_recordings"))
       users_to_recs = spark.createDataFrame(rowRDD = edge_rdd.map(x => x.getAsRow), new UserToRecordingOrArtistRelation().getSchema)
         .join(
-          getUsers.select(col("_id").as("_from"), col("node_id").as("user_id")),
+          getUsers(force_reread).select(col("_id").as("_from"), col("node_id").as("user_id")),
           Seq("_from"), "inner"
         )
         .join(
-          getRecordings.select(col("_id").as("_to"), col("node_id").as("rec_id")),
+          getRecordings(force_reread).select(col("_id").as("_to"), col("node_id").as("rec_id")),
           Seq("_to"), "inner"
         )
         .persist(StorageLevel.DISK_ONLY)
@@ -77,19 +77,19 @@ class ArangoDBHandler(val spark: SparkSession) {
     }
   }
 
-  def getUserToArtistEdges: Dataset[Row] = {
-    if (users_to_artists == null) {
+  def getUserToArtistEdges(force_reread: Boolean = false): Dataset[Row] = {
+    if (force_reread || users_to_artists == null) {
       val edge_rdd = ArangoSpark
         .load[UserToRecordingOrArtistRelation](spark.sparkContext,
           "users_to_artists",
           ReadOptions("MLHD_processing", collection = "users_to_artists"))
       users_to_artists = spark.createDataFrame(rowRDD = edge_rdd.map(x => x.getAsRow), new UserToRecordingOrArtistRelation().getSchema)
         .join(
-          getUsers.select(col("_id").as("_from"), col("node_id").as("user_id")),
+          getUsers(force_reread).select(col("_id").as("_from"), col("node_id").as("user_id")),
           Seq("_from"), "inner"
         )
         .join(
-          getArtists.select(col("_id").as("_to"), col("node_id").as("artist_id")),
+          getArtists(force_reread).select(col("_id").as("_to"), col("node_id").as("artist_id")),
           Seq("_to"), "inner"
         )
         .persist(StorageLevel.DISK_ONLY)
@@ -99,19 +99,19 @@ class ArangoDBHandler(val spark: SparkSession) {
     }
   }
 
-  def getArtistToRecordingEdges: Dataset[Row] = {
-    if(artists_to_recs==null) {
+  def getArtistToRecordingEdges(force_reread: Boolean = false): Dataset[Row] = {
+    if(force_reread || artists_to_recs==null) {
       val edge_rdd = ArangoSpark
         .load[ArtistToRecordingRelation](spark.sparkContext,
           "artists_to_recordings",
           ReadOptions("MLHD_processing", collection = "artists_to_recordings"))
       artists_to_recs = spark.createDataFrame(rowRDD = edge_rdd.map(x => x.getAsRow), new ArtistToRecordingRelation().getSchema)
         .join(
-          getArtists.select(col("_id").as("_from"), col("node_id").as("artist_id")),
+          getArtists(force_reread).select(col("_id").as("_from"), col("node_id").as("artist_id")),
           Seq("_from"), "inner"
         )
         .join(
-          getRecordings.select(col("_id").as("_to"), col("node_id").as("rec_id")),
+          getRecordings(force_reread).select(col("_id").as("_to"), col("node_id").as("rec_id")),
           Seq("_to"), "inner"
         )
         .persist(StorageLevel.DISK_ONLY)

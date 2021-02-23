@@ -28,12 +28,12 @@ object GraphProperties {
     val sc = spark.sparkContext
 
     val arangoDBHandler = new ArangoDBHandler(spark)
-    val users = arangoDBHandler.getUsers
-    val recs = arangoDBHandler.getRecordings
-    val artists = arangoDBHandler.getArtists
-    val users_to_recs = arangoDBHandler.getUserToRecordingEdges
-    val users_to_artists = arangoDBHandler.getUserToArtistEdges
-    val artists_to_recs = arangoDBHandler.getArtistToRecordingEdges
+    val users = arangoDBHandler.getUsers()
+    val recs = arangoDBHandler.getRecordings()
+    val artists = arangoDBHandler.getArtists()
+    val users_to_recs = arangoDBHandler.getUserToRecordingEdges()
+    val users_to_artists = arangoDBHandler.getUserToArtistEdges()
+    val artists_to_recs = arangoDBHandler.getArtistToRecordingEdges()
 
     var m = Map[String, Any]()
     m += ("users" -> users.count())

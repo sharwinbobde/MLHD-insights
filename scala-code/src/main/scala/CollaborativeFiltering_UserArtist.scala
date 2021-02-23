@@ -8,7 +8,7 @@ object CollaborativeFiltering_UserArtist {
 
   val ratingCol = "rating"
   val items_to_recommend = 100
-  val experiment_years: Array[Int] = Array(2005)
+  val experiment_years: Array[Int] = Array(2005, 2008, 2012)
   val sample_items_per_artist = 10
 
   val rating_lower_threshold = 25
@@ -38,9 +38,9 @@ object CollaborativeFiltering_UserArtist {
     val sc = spark.sparkContext
 
     val arangoDBHandler = new ArangoDBHandler(spark)
-    val user_artist_interactions = arangoDBHandler.getUserToArtistEdges
-    val user_rec_interactions = arangoDBHandler.getUserToRecordingEdges
-    val artist_rec_interactions = arangoDBHandler.getArtistToRecordingEdges
+    val user_artist_interactions = arangoDBHandler.getUserToArtistEdges()
+    val user_rec_interactions = arangoDBHandler.getUserToRecordingEdges()
+    val artist_rec_interactions = arangoDBHandler.getArtistToRecordingEdges()
 
 
     // CrossValidation for hyperparameter tuning

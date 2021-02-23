@@ -12,7 +12,7 @@ object CollaborativeFiltering_UserRecord {
 
   val ratingCol = "rating"
   val items_to_recommend = 100
-  val experiment_years: Array[Int] = Array(2005)
+  val experiment_years: Array[Int] = Array(2005, 2008, 2012)
 
   val rating_lower_threshold = 25
 
@@ -44,7 +44,7 @@ object CollaborativeFiltering_UserRecord {
     val sc = spark.sparkContext
 
     val arangoDBHandler = new ArangoDBHandler(spark)
-    val user_recs_interactions = arangoDBHandler.getUserToRecordingEdges
+    val user_recs_interactions = arangoDBHandler.getUserToRecordingEdges()
 
     // CrossValidation for hyperparameter tuning
     hyperparameterTuning(user_recs_interactions, spark)
