@@ -1,11 +1,8 @@
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.sql.expressions.Window
-import org.apache.spark.sql.functions.{col, collect_list, posexplode, rand, row_number, udf}
-import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession, functions}
+import org.apache.spark.sql.functions.{rand, row_number}
+import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
 import utils.{CF_selected_hyperparms, CollabFilteringUtils}
-
-import scala.collection.{breakOut, mutable}
-import scala.util.Random
 
 object CollaborativeFiltering_UserArtist {
 
@@ -112,62 +109,48 @@ object CollaborativeFiltering_UserArtist {
         val raw_recommendations = CF_utils.getRecommendations(model, test_user_ids, items_to_recommend)
         val recommendations = CF_utils.postprocessRecommendations(raw_recommendations)
 
-        recommendations
-          .show()
-
-        postprocessExpansionArtistToRecordings(recommendations, artist_rec_interactions, year)
-//          .show(120)
-
-//        recommendations
-//          .coalesce(1)
-//          .write
-//          .mode(SaveMode.Overwrite)
-//          .option("header", "true")
-//          .csv(out_dir + "output/year_" + year.toString + "_CF_user-artist_set_" + set.toString + ".csv")
+        postprocessExpansionArtistToRecordings(recommendations, artist_rec_interactions)
+          .coalesce(1)
+          .write
+          .mode(SaveMode.Overwrite)
+          .option("header", "true")
+          .csv(out_dir + "output/year_" + year.toString + "_CF_user-artist_set_" + set.toString + ".csv")
       })
     })
 
   }
 
-  def hyperparameterTuning(): Unit = {
-    // TODO copy progress from CollaborativeFiltering_UserRecord.hyperparameterTuning() after completing those TODOs
-  }
-
   def postprocessExpansionArtistToRecordings(recommendations: Dataset[Row],
-                                             artist_rec_interactions: Dataset[Row],
-                                             year: Int): Dataset[Row]={
+                                             artist_rec_interactions: Dataset[Row]): Dataset[Row] = {
+    // for every user_id artist_id pair select only 10 recordings at most
+    // join recommendations and artist_rec_interactions by artist_id
 
-    // TODO for every user_id artist_id pair select only 10 recordings at most
-    // TODO join recommendations and artist_rec_interactions by artist_id
-
-    val reducing_function = udf((items: mutable.WrappedArray[Long]) => {
-      Random.shuffle(items).take(sample_items_per_artist).toArray
-    })
-    val df = recommendations
+    var df = recommendations
       .join(
         artist_rec_interactions.select("artist_id", "rec_id")
           .dropDuplicates(),
         Seq("artist_id"), "inner")
-      .groupBy("user_id", "artist_id")
-      .agg(functions.collect_list("rec_id").as("items"))
 
-      val win = Window.partitionBy("user_id").orderBy(rand())
-      df
-      .withColumn("reduced_items", reducing_function(col("items")))
+    // subset items per user-artist pair in a random manner
+    val win_1 = Window.partitionBy("user_id", "artist_id").orderBy(rand())
+    df = df
+      .withColumn("row_1", row_number.over(win_1))
+      .filter("row_1 <= " + sample_items_per_artist.toString)
+      .select("user_id", "rec_id", "row_1")
       .orderBy("user_id")
-//      .select(col("user_id"), posexplode(col("reduced_items")))
-//      .select(col("user_id"), col("pos"), col("col").as("rec_id"))
-//      .orderBy("user_id", "pos")
-//      .select("user_id", "pos", "rec_id")
 
-    df.printSchema()
-    df.show()
+    // select first 100 for each user_id
+    val win_2 = Window.partitionBy("user_id").orderBy("row_1")
+    df = df
+      .withColumn("row_2", row_number.over(win_2))
+      .filter("row_2 <= " + items_to_recommend)
+      .withColumnRenamed("row_2", "rank")
+      .select("user_id",  "rank","rec_id")
 
-    // TODO select first 100 for each user_id
-    // TODO order also by occurences in the graph
-//    val win = Window.partitionBy("user_id").orderBy("pos")
-//    df.withColumn("row", row_number.over(win))
-//      .filter("row <= 100")
     df
+  }
+
+  def hyperparameterTuning(): Unit = {
+    // TODO copy progress from CollaborativeFiltering_UserRecord.hyperparameterTuning() after completing those TODOs
   }
 }
