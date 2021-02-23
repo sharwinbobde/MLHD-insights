@@ -38,7 +38,7 @@ object CollaborativeFiltering_UserRecord {
         .config("arangodb.hosts", "plb.sharwinbobde.com:8529") // system ip as docker ip won't be loopback
         .config("arangodb.user", "root")
         .config("arangodb.password", "Happy2Help!")
-        .appName("CollabFiltering")
+        .appName("CollabFiltering User-Record")
         .getOrCreate()
 
     val sc = spark.sparkContext
@@ -47,7 +47,7 @@ object CollaborativeFiltering_UserRecord {
     val user_recs_interactions = arangoDBHandler.getUserToRecordingEdges()
 
     // CrossValidation for hyperparameter tuning
-    hyperparameterTuning(user_recs_interactions, spark)
+//    hyperparameterTuning(user_recs_interactions, spark)
 
     testRecommendationsGeneration(user_recs_interactions, spark)
 

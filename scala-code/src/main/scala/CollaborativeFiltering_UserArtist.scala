@@ -32,7 +32,7 @@ object CollaborativeFiltering_UserArtist {
         .config("arangodb.hosts", "plb.sharwinbobde.com:8529") // system ip as docker ip won't be loopback
         .config("arangodb.user", "root")
         .config("arangodb.password", "Happy2Help!")
-        .appName("CollabFiltering")
+        .appName("CollabFiltering User-Artist")
         .getOrCreate()
 
     val sc = spark.sparkContext
