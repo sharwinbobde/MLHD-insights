@@ -108,8 +108,7 @@ class Metrics:
         arr = list(recs.values())
         pop = self.catalogues[year]
         metric, _ = recmetrics.novelty(arr, pop, len(arr), k)
-        print('------ Novelty')
-        print(metric)
+        return metric
 
     def coverage(self, recs: dict, year: int):
         """
@@ -131,10 +130,10 @@ class Metrics:
         m['MAR@' + str(K)] = self.mark(recs, year, set_, k)
         m['MAR_filtered@' + str(K)] = self.mark_filter_valid(recs, year, set_, k)
         m['Pers@' + str(K)] = self.personalization(recs)
-        m['Nov@' + str(K)] = self.personalization(recs)
+        # m['Nov@' + str(K)] = self.novelty(recs, year, k)
         m['NaN_Prop@' + str(K)], _, _ = self.NaN_Proportion(recs, year, set_)
         m['Cov@' + str(K)] = self.coverage(recs, year)
-        # m['Fam@' + str(K)] = metrics.familiarity(recs)
+        m['Fam@' + str(K)] = metrics.familiarity(recs)
         return m
 
 
