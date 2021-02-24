@@ -121,7 +121,7 @@ class Metrics:
         catalogue = list(self.catalogues[year].keys())
         return recmetrics.prediction_coverage(arr, catalogue)
 
-    def familiarity(self):
+    def familiarity(self, recs):
         # TODO
         pass
 
@@ -142,7 +142,8 @@ if __name__ == '__main__':
     yr = 2012
     K = 100
     set_ = 3
-    model = "CF"
+    # model = "CF_user-rec"
+    model = "CF_user-artist"
 
     for yr in experiment_years:
         print("year: " + str(yr) + " ==================================")

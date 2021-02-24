@@ -11,6 +11,7 @@ spark-events/*
 *.pbf
 *.crc
 *.svg
+*.png
 graph_properties.json
 out_data/*
 out_data*
