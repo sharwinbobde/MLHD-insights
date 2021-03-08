@@ -1,62 +1,36 @@
-from glob import glob
+import logging
 
 import pandas as pd
 import recmetrics
 
+from src.utils.FileUtils import FileUtils
+
 experiment_years = [2005, 2008, 2012]
+data_stem = "../../scala-code/data/processed/"
+fu = FileUtils(data_stem)
 
 
 class Metrics:
-    data_stem = "../../scala-code/data/processed/"
 
-    def __init__(self):
+    def __init__(self, year: int):
         self.models = ["CF"]
-        self.years = experiment_years
-        print('initializing Metrics utilities...')
+        self.year = year
+        print('initializing Metrics utilities for year ' + str(year)+ '...')
 
         self.catalogues = dict()
         self.truths = dict()
-        for yr in experiment_years:
-            print("initializing " + str(yr))
-            self.catalogues[yr] = self.create_catelog(yr)
+        self.catalog = fu.read_catalog(year)
 
-            self.truths[yr] = dict()
-            for set_no in [1, 2, 3]:
-                self.truths[yr][set_no] = self.read_ground_truth(yr, set_no)
+        self.truths = dict()
+        for set_no in [1, 2, 3]:
+            self.truths[set_no] = fu.read_ground_truth(year, set_no)
 
         print('Ready!')
-
-    def read_recommendations_file(self, year: int, model: str, set_num: int, k: int) -> dict:
-        for f in glob(
-                self.data_stem + "output/year_" + str(year) + "_" + model + "_set_" + str(set_num) + ".csv/part-*.csv"):
-            return pd.read_csv(f) \
-                .query("rank <= " + str(k)) \
-                .groupby("user_id")['rec_id'] \
-                .apply(list) \
-                .to_dict()
-
-    def read_ground_truth(self, year: int, set_num: int) -> dict:
-        for f in glob(self.data_stem + "holdout/year_" + str(year) + "_test_test_interactions_user-item_set_" + str(
-                set_num) + ".csv/part-*.csv"):
-            return pd.read_csv(f) \
-                .groupby("user_id")['rec_id'] \
-                .apply(list) \
-                .to_dict()
-
-    def create_catelog(self, year: int) -> dict:
-        for f in glob(self.data_stem + "item_listens_per_year.csv/part-*.csv"):
-            df = pd.read_csv(f) \
-                .rename(columns={"sum(yr_" + str(year) + ")": "count"}) \
-                .query("count > 0") \
-                .set_index('rec_id') \
-                ["count"]
-
-            return df.to_dict()
 
     # ========================== Metrics ======================
 
     def NaN_Proportion(self, recs: dict, year: int, set_num: int):
-        truth = self.truths[year][set_num]
+        truth = self.truths[set_num]
         df_truth = pd.DataFrame(truth.items(), columns=["user_id", 'truth'])
         df_recs = pd.DataFrame(recs.items(), columns=["user_id", 'recommended'])
 
@@ -70,7 +44,7 @@ class Metrics:
         return len_nan / len_tot, len_nan, len_tot
 
     def mark(self, recs: dict, year: int, set_num: int, k: int):
-        truth = self.truths[year][set_num]
+        truth = self.truths[set_num]
         df_truth = pd.DataFrame(truth.items(), columns=["user_id", 'truth'])
         df_recs = pd.DataFrame(recs.items(), columns=["user_id", 'recommended'])
 
@@ -81,13 +55,13 @@ class Metrics:
         return recmetrics.mark(df.truth.tolist(), df.recommended.tolist(), k)
 
     def mark_filter_valid(self, recs: dict, year: int, set_num: int, k: int):
-        truth = self.truths[year][set_num]
+        truth = self.truths[set_num]
         df_truth = pd.DataFrame(truth.items(), columns=["user_id", 'truth'])
         df_recs = pd.DataFrame(recs.items(), columns=["user_id", 'recommended'])
 
         df = df_truth.join(df_recs.set_index('user_id'), on="user_id") \
             [["truth", "recommended"]] \
-            .query("recommended.notnull() ")
+            .dropna()
         return recmetrics.mark(df.truth.tolist(), df.recommended.tolist(), k)
 
     def personalization(self, recs: dict):
@@ -106,7 +80,8 @@ class Metrics:
         assumes numeric item codes
         """
         arr = list(recs.values())
-        pop = self.catalogues[year]
+        pop = self.catalog
+        # TODO error because for user -> artist -> rec we need to filter buy songs that exist in the year
         metric, _ = recmetrics.novelty(arr, pop, len(arr), k)
         return metric
 
@@ -118,36 +93,45 @@ class Metrics:
         :return:
         """
         arr = list(recs.values())
-        catalogue = list(self.catalogues[year].keys())
-        return recmetrics.prediction_coverage(arr, catalogue)
+        catalog = list(self.catalog.keys())
+        return recmetrics.prediction_coverage(arr, catalog)
 
     def familiarity(self, recs):
         # TODO
-        pass
+        return -1
 
     def get_all_metrics(self, recs: dict, year: int, set_num: int, k: int):
         m = {}
-        m['MAR@' + str(K)] = self.mark(recs, year, set_, k)
-        m['MAR_filtered@' + str(K)] = self.mark_filter_valid(recs, year, set_, k)
-        m['Pers@' + str(K)] = self.personalization(recs)
-        # m['Nov@' + str(K)] = self.novelty(recs, year, k)
-        m['NaN_Prop@' + str(K)], _, _ = self.NaN_Proportion(recs, year, set_)
-        m['Cov@' + str(K)] = self.coverage(recs, year)
-        m['Fam@' + str(K)] = metrics.familiarity(recs)
+        m['MAR@' + str(k)] = self.mark(recs, year, set_num, k)
+        m['MAR_filtered@' + str(k)] = self.mark_filter_valid(recs, year, set_num, k)
+        m['NaN_Prop@' + str(k)], _, _ = self.NaN_Proportion(recs, year, set_num)
+        m['Nov@' + str(k)] = self.novelty(recs, year, k)
+        try:
+            m['Pers@' + str(k)] = self.personalization(recs)
+        except TypeError:
+            logging.error("TypeError")
+        arr = []
+        for items in list(recs.items()):
+            arr.append(len(items[1]))
+        print(set(arr))
+        m['Cov@' + str(k)] = self.coverage(recs, year)
+        m['Fam@' + str(k)] = self.familiarity(recs)
         return m
 
 
 if __name__ == '__main__':
-    metrics = Metrics()
-    yr = 2012
-    K = 100
-    set_ = 3
-    # model = "CF_user-rec"
-    model = "CF_user-artist"
-
+    metrics_evaluators = {}
     for yr in experiment_years:
-        print("year: " + str(yr) + " ==================================")
-        recs = metrics.read_recommendations_file(yr, model, set_, K)
-        m = metrics.get_all_metrics(recs, yr, set_, K)
-        print(m)
+        metrics_evaluators[yr] = Metrics(yr)
+    # TODO filter users to have some specified number of items
+    k = 93
+    set_ = 1
+    for model in ["CF_user-rec", "CF_user-artist"]:
+        print("\n\nmodel = " + model)
+        for yr in experiment_years:
+            print("year: " + str(yr) + " ==================================")
+            recs = fu.get_recommendations_dict_single_model(yr, model, set_, k)
+            m = metrics_evaluators[yr].get_all_metrics(recs, yr, set_, k)
+            print(m)
+
     print("DONE")
