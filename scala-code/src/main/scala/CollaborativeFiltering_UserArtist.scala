@@ -109,7 +109,7 @@ object CollaborativeFiltering_UserArtist {
         val raw_recommendations = CF_utils.getRecommendations(model, test_user_ids, items_to_recommend)
         val recommendations = CF_utils.postprocessRecommendations(raw_recommendations)
 
-        postprocessExpansionArtistToRecordings(recommendations, artist_rec_interactions)
+        postprocessExpansionArtistToRecordings(recommendations, artist_rec_interactions, user_rec_interactions, year)
           .coalesce(1)
           .write
           .mode(SaveMode.Overwrite)
@@ -121,7 +121,9 @@ object CollaborativeFiltering_UserArtist {
   }
 
   def postprocessExpansionArtistToRecordings(recommendations: Dataset[Row],
-                                             artist_rec_interactions: Dataset[Row]): Dataset[Row] = {
+                                             artist_rec_interactions: Dataset[Row],
+                                             user_rec_interactions: Dataset[Row],
+                                             year: Int): Dataset[Row] = {
     // for every user_id artist_id pair select only 10 recordings at most
     // join recommendations and artist_rec_interactions by artist_id
 
@@ -130,12 +132,21 @@ object CollaborativeFiltering_UserArtist {
         artist_rec_interactions.select("artist_id", "rec_id")
           .dropDuplicates(),
         Seq("artist_id"), "inner")
+      // filter to keep only those records which exist at the time of recommendation
+      .join(
+        user_rec_interactions
+          .select("rec_id", "years.*")
+          .filter("yr_" + year.toString + " > 0")
+          .select("rec_id"),
+        Seq("rec_id"), "inner")
 
     // subset items per user-artist pair in a random manner
     val win_1 = Window.partitionBy("user_id", "artist_id").orderBy(rand())
     df = df
       .withColumn("row_1", row_number.over(win_1))
       .filter("row_1 <= " + sample_items_per_artist.toString)
+      // drop duplicate entries for user_id and rec_id pairs
+      .dropDuplicates(Seq("user_id", "rec_id"))
       .select("user_id", "rec_id", "row_1")
       .orderBy("user_id")
 
@@ -145,7 +156,7 @@ object CollaborativeFiltering_UserArtist {
       .withColumn("row_2", row_number.over(win_2))
       .filter("row_2 <= " + items_to_recommend)
       .withColumnRenamed("row_2", "rank")
-      .select("user_id",  "rank","rec_id")
+      .select("user_id", "rank", "rec_id")
 
     df
   }
