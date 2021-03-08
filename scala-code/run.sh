@@ -17,11 +17,12 @@ BACKTITLE="Backtitle here"
 TITLE="Title here"
 MENU="Choose one of the following options:"
 
-OPTIONS=(1 "Setup Experiments"
-         2 "Stats for Graph Properties"
-         3 "Divide Dataset for Experiments"
-         4 "User-Record Collaborative Filtering"
-         5 "User-Artist Collaborative Filtering"
+OPTIONS=(1 "add IDs for Nodes"
+         2 "Setup Experiments"
+         3 "Stats for Graph Properties"
+         4 "Divide Dataset for Experiments"
+         5 "User-Record Collaborative Filtering"
+         6 "User-Artist Collaborative Filtering"
          )
 
 CHOICE=$(dialog --clear \
@@ -35,18 +36,21 @@ CHOICE=$(dialog --clear \
 clear
 case $CHOICE in
         1)
-            mainClass=SetupExperiments
+            mainClass=IDsForNodes
             ;;
         2)
-            mainClass=GraphProperties
+            mainClass=SetupExperiments
             ;;
         3)
-            mainClass=DatasetDivision
+            mainClass=GraphProperties
             ;;
         4)
-            mainClass=CollaborativeFiltering_UserRecord
+            mainClass=DatasetDivision
             ;;
         5)
+            mainClass=CollaborativeFiltering_UserRecord
+            ;;
+        6)
             mainClass=CollaborativeFiltering_UserArtist
             ;;
         *)

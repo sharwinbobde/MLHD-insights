@@ -34,10 +34,8 @@ object SetupExperiments {
 
     val arangoDBHandler = new ArangoDBHandler(spark)
 
-    addIDsToNodes(arangoDBHandler.getUsers(), arangoDBHandler.getArtists(), arangoDBHandler.getRecordings())
-    print("added node IDs")
-    val user_rec_interactions = arangoDBHandler.getUserToRecordingEdges(force_reread = true)
-    user_rec_interactions.printSchema()
+    val user_rec_interactions = arangoDBHandler.getUserToRecordingEdges()
+
     visualization_years.foreach(i => {
       val year_str = i.toString
       storeStatsForYear(year_str, user_rec_interactions)
@@ -106,15 +104,6 @@ object SetupExperiments {
     System.exit(0)
   }
 
-  def addIDsToNodes(users: Dataset[Row], artists: Dataset[Row], recordings: Dataset[Row]): Unit = {
-    val users_with_id = users.withColumn("node_id", monotonically_increasing_id() * 10 + 1)
-    val artists_with_id = artists.withColumn("node_id", monotonically_increasing_id() * 10 + 2)
-    val recs_with_id = recordings.withColumn("node_id", monotonically_increasing_id() * 10 + 3)
-
-    ArangoSpark.saveDF(users_with_id, "users", WriteOptions(database = "MLHD_processing", method = WriteOptions.UPDATE))
-    ArangoSpark.saveDF(artists_with_id, "artists", WriteOptions(database = "MLHD_processing", method = WriteOptions.UPDATE))
-    ArangoSpark.saveDF(recs_with_id, "recordings", WriteOptions(database = "MLHD_processing", method = WriteOptions.UPDATE))
-  }
 
   def percentileUserListensByYear(user_listens_per_year: DataFrame): Unit = {
     val percentiles_to_extract = Array(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
