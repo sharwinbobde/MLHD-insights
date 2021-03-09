@@ -1,6 +1,8 @@
 from glob import glob
-import pandas as pd
+from math import isclose
 
+import pandas as pd
+import numpy as np
 
 def df_to_dict(df: pd.DataFrame) -> dict:
     return df \
@@ -9,7 +11,7 @@ def df_to_dict(df: pd.DataFrame) -> dict:
         .to_dict()
 
 
-class FileUtils:
+class RecommendationUtils:
 
     def __init__(self, data_stem: str):
         self.data_stem = data_stem
@@ -24,21 +26,29 @@ class FileUtils:
                                             reranking_weights: list[float]) -> dict:
         if len(models) != len(reranking_weights):
             raise ValueError("models and reranking_weights must be lists with the same size")
+
+        if not isclose(np.sum(reranking_weights), 1.0, rel_tol=0.01):
+            raise ValueError("the list reranking_weights should sum up to one; provided "+str(reranking_weights))
+
         list_df = []
         for i in range(len(models)):
             df = self.get_recommendations_df(year, models[i], set_num, k, reranking_weights[i])
             list_df.append(df)
+
+        # sort by rank
         df = pd.concat(list_df) \
-            .sort_values(by=["user_id", "rank"])
+            .sort_values(by=["user_id", "rank"])\
+            .drop_duplicates(subset=["user_id", "rec_id"])
 
         # code snippet for showing duplicate user-item entries, (a bug in the chosen recommender)
         # dups = df[["user_id", 'rec_id']].pivot_table(index=["user_id", 'rec_id'], aggfunc='size')
         # print(dups[dups>1])
 
+
         # find new rank
         df["new_rank"] = df.groupby("user_id")['rank'].rank(method='first')
         df = df.query("new_rank <= " + str(K))
-        print(df)
+        # print(df)
         return df_to_dict(df)
 
     def get_recommendations_df(self, year: int, model: str, set_num: int, k: int,

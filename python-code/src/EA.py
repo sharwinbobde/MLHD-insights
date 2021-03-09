@@ -1,4 +1,5 @@
 from jmetal.algorithm.multiobjective import NSGAII
+from jmetal.algorithm.multiobjective.nsgaiii import NSGAIII, UniformReferenceDirectionFactory
 from jmetal.lab.visualization import Plot, InteractivePlot
 from jmetal.operator import SBXCrossover, PolynomialMutation
 from jmetal.problem import ZDT1
@@ -8,14 +9,18 @@ from jmetal.util.termination_criterion import StoppingByEvaluations
 
 from src.RecSysProblem import RecSysProblem
 
-problem = RecSysProblem()
+problem = RecSysProblem(models=["CF_user-rec", "CF_user-artist"],
+                        metrics=['MAR', 'Cov', 'Pers', 'Nov'],
+                        year=2005,
+                        k=93,
+                        K=93)
 
-max_evaluations = 1500
+max_evaluations = 100*10
 
-algorithm = NSGAII(
+algorithm = NSGAIII(
     problem=problem,
     population_size=100,
-    offspring_population_size=100,
+    reference_directions=UniformReferenceDirectionFactory(problem.number_of_objectives, n_points=50),
     mutation=PolynomialMutation(probability=1.0 / problem.number_of_variables, distribution_index=20),
     crossover=SBXCrossover(probability=1.0, distribution_index=20),
     population_evaluator=SparkEvaluator(),
@@ -32,8 +37,8 @@ plot_front = Plot(title='Pareto front approximation',
                   reference_front=problem.reference_front,
                   axis_labels=problem.obj_labels)
 plot_front.plot(front,
-                label='NSGAII-'+problem.get_name(),
-                filename='../images/' + algorithm.get_name()+ "-" + problem.get_name(),
+                label='NSGAIII-' + problem.get_name(),
+                filename='../images/' + algorithm.get_name() + "-" + problem.get_name(),
                 format='png')
 
 # Plot interactive front
@@ -41,5 +46,5 @@ plot_front = InteractivePlot(title='Pareto front approximation. Problem: ' + pro
                              reference_front=problem.reference_front,
                              axis_labels=problem.obj_labels)
 plot_front.plot(front,
-                label='NSGAII-'+problem.get_name(),
-                filename='../images/' + algorithm.get_name() + "-" + problem.get_name(),)
+                label='NSGAIII-' + problem.get_name(),
+                filename='../images/' + algorithm.get_name() + "-" + problem.get_name(), )

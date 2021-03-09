@@ -3,14 +3,14 @@ import logging
 import pandas as pd
 import recmetrics
 
-from src.utils.FileUtils import FileUtils
+from src.utils.RecommendationUtils import RecommendationUtils
 
 experiment_years = [2005, 2008, 2012]
 data_stem = "../../scala-code/data/processed/"
-fu = FileUtils(data_stem)
+fu = RecommendationUtils(data_stem)
 
 
-class Metrics:
+class MetricsEvaluator:
 
     def __init__(self, year: int):
         self.models = ["CF"]
@@ -75,7 +75,7 @@ class Metrics:
         metric = recmetrics.personalization(arr)
         return metric
 
-    def novelty(self, recs: dict, year: int, k: int):
+    def novelty(self, recs: dict, k: int):
         """
         assumes numeric item codes
         """
@@ -94,7 +94,7 @@ class Metrics:
         """
         arr = list(recs.values())
         catalog = list(self.catalog.keys())
-        return recmetrics.prediction_coverage(arr, catalog)
+        return recmetrics.prediction_coverage(arr, catalog) / 100.0
 
     def familiarity(self, recs):
         # TODO
@@ -105,15 +105,15 @@ class Metrics:
         m['MAR@' + str(k)] = self.mark(recs, year, set_num, k)
         m['MAR_filtered@' + str(k)] = self.mark_filter_valid(recs, year, set_num, k)
         m['NaN_Prop@' + str(k)], _, _ = self.NaN_Proportion(recs, year, set_num)
-        m['Nov@' + str(k)] = self.novelty(recs, year, k)
+        m['Nov@' + str(k)] = self.novelty(recs, k)
         try:
             m['Pers@' + str(k)] = self.personalization(recs)
         except TypeError:
             logging.error("TypeError")
-        arr = []
-        for items in list(recs.items()):
-            arr.append(len(items[1]))
-        print(set(arr))
+            arr = []
+            for items in list(recs.items()):
+                arr.append(len(items[1]))
+            logging.error(set(arr))
         m['Cov@' + str(k)] = self.coverage(recs, year)
         m['Fam@' + str(k)] = self.familiarity(recs)
         return m
@@ -122,16 +122,25 @@ class Metrics:
 if __name__ == '__main__':
     metrics_evaluators = {}
     for yr in experiment_years:
-        metrics_evaluators[yr] = Metrics(yr)
+        metrics_evaluators[yr] = MetricsEvaluator(yr)
     # TODO filter users to have some specified number of items
-    k = 93
+    k_ = 100
     set_ = 1
-    for model in ["CF_user-rec", "CF_user-artist"]:
-        print("\n\nmodel = " + model)
-        for yr in experiment_years:
-            print("year: " + str(yr) + " ==================================")
-            recs = fu.get_recommendations_dict_single_model(yr, model, set_, k)
-            m = metrics_evaluators[yr].get_all_metrics(recs, yr, set_, k)
-            print(m)
+    # Test for single recommenders
+    # for model in ["CF_user-rec", "CF_user-artist"]:
+    #     print("\n\nmodel = " + model)
+    #     for yr in experiment_years:
+    #         print("year: " + str(yr) + " ==================================")
+    #         recs = fu.get_recommendations_dict_single_model(yr, model, set_, k)
+    #         m = metrics_evaluators[yr].get_all_metrics(recs, yr, set_, k)
+    #         print(m)
 
+    # Test for multiple recommenders
+    models = ["CF_user-rec", "CF_user-artist"]
+    weights = [0.2, 0.8]
+    K_ = 100
+    for yr in experiment_years:
+        recs_ = fu.get_recommendations_dict_many_model(yr, models, set_, k_, K_, weights)
+        m_ = metrics_evaluators[yr].get_all_metrics(recs_, yr, set_, K_)
+        print(m_)
     print("DONE")
