@@ -17,6 +17,7 @@ out_data/*
 out_data*
 ML1-insights-venv/*
 venv/*
+images/*
 
 # vscode env
 .vscode/*
