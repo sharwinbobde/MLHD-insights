@@ -1,13 +1,15 @@
 import logging
+import sys
 
 import pandas as pd
 import recmetrics
-
+import numpy as np
+from config import experiment_years
 from src.utils.RecommendationUtils import RecommendationUtils
+import matplotlib.pyplot as plt
 
-experiment_years = [2005, 2008, 2012]
 data_stem = "../../scala-code/data/processed/"
-fu = RecommendationUtils(data_stem)
+rec_utils = RecommendationUtils(data_stem)
 
 
 class MetricsEvaluator:
@@ -15,16 +17,17 @@ class MetricsEvaluator:
     def __init__(self, year: int):
         self.models = ["CF"]
         self.year = year
-        print('initializing Metrics utilities for year ' + str(year)+ '...')
+        print('initializing Metrics utilities for year ' + str(year) + '...')
 
         self.catalogues = dict()
         self.truths = dict()
-        self.catalog = fu.read_catalog(year)
+        self.catalog = rec_utils.read_catalog(year)
 
         self.truths = dict()
         for set_no in [1, 2, 3]:
-            self.truths[set_no] = fu.read_ground_truth(year, set_no)
+            self.truths[set_no] = rec_utils.read_ground_truth(year, set_no)
 
+        self.novelty_threshold = rec_utils.get_novelty_threshold(self.catalog)
         print('Ready!')
 
     # ========================== Metrics ======================
@@ -72,20 +75,29 @@ class MetricsEvaluator:
         A model is "personalizing" well if the set of recommendations for each user is different.
         """
         arr = list(recs.values())
-        metric = recmetrics.personalization(arr)
+        try:
+            metric = recmetrics.personalization(arr)
+        except TypeError:
+            logging.error("TypeError: All lists need to be of the same size")
+            arr = []
+            for items in list(recs.items()):
+                arr.append(len(items[1]))
+            logging.error(set(arr))
+            sys.exit(0)
         return metric
 
     def novelty(self, recs: dict, k: int):
         """
         assumes numeric item codes
         """
-        arr = list(recs.values())
-        pop = self.catalog
-        # TODO error because for user -> artist -> rec we need to filter buy songs that exist in the year
-        metric, _ = recmetrics.novelty(arr, pop, len(arr), k)
-        return metric
+        predicted = list(recs.values())
+        metrics = []
+        for sublist in predicted:
+            unpop_count = len([i for i in sublist if self.catalog[i] < self.novelty_threshold])
+            metrics.append(unpop_count/k)
+        return np.mean(metrics)
 
-    def coverage(self, recs: dict, year: int):
+    def coverage(self, recs: dict):
         """
         Coverage in percentage
         :param recs: recommendations dictionary
@@ -100,21 +112,14 @@ class MetricsEvaluator:
         # TODO
         return -1
 
-    def get_all_metrics(self, recs: dict, year: int, set_num: int, k: int):
+    def get_all_metrics(self, recs: dict, year: int, set_num: int, k: int) -> dict:
         m = {}
         m['MAR@' + str(k)] = self.mark(recs, year, set_num, k)
         m['MAR_filtered@' + str(k)] = self.mark_filter_valid(recs, year, set_num, k)
         m['NaN_Prop@' + str(k)], _, _ = self.NaN_Proportion(recs, year, set_num)
+        m['Pers@' + str(k)] = self.personalization(recs)
         m['Nov@' + str(k)] = self.novelty(recs, k)
-        try:
-            m['Pers@' + str(k)] = self.personalization(recs)
-        except TypeError:
-            logging.error("TypeError")
-            arr = []
-            for items in list(recs.items()):
-                arr.append(len(items[1]))
-            logging.error(set(arr))
-        m['Cov@' + str(k)] = self.coverage(recs, year)
+        m['Cov@' + str(k)] = self.coverage(recs)
         m['Fam@' + str(k)] = self.familiarity(recs)
         return m
 
@@ -124,23 +129,24 @@ if __name__ == '__main__':
     for yr in experiment_years:
         metrics_evaluators[yr] = MetricsEvaluator(yr)
     # TODO filter users to have some specified number of items
-    k_ = 100
+    k_ = 20
     set_ = 1
-    # Test for single recommenders
-    # for model in ["CF_user-rec", "CF_user-artist"]:
-    #     print("\n\nmodel = " + model)
-    #     for yr in experiment_years:
-    #         print("year: " + str(yr) + " ==================================")
-    #         recs = fu.get_recommendations_dict_single_model(yr, model, set_, k)
-    #         m = metrics_evaluators[yr].get_all_metrics(recs, yr, set_, k)
-    #         print(m)
+    print("Test for single recommenders")
+    for model in ["CF_user-rec", "CF_user-artist"]:
+        print("\nmodel = " + model)
+        for yr in experiment_years:
+            print(f"year: {yr}")
+            recs_ = rec_utils.get_recommendations_dict_single_model(yr, model, set_, k_)
+            m = metrics_evaluators[yr].get_all_metrics(recs_, yr, set_, k_)
+            print(m)
 
-    # Test for multiple recommenders
+    print("\nTest for multiple recommenders")
     models = ["CF_user-rec", "CF_user-artist"]
-    weights = [0.2, 0.8]
-    K_ = 100
+    weights = [0.05, 0.95]
+    K_ = k_
     for yr in experiment_years:
-        recs_ = fu.get_recommendations_dict_many_model(yr, models, set_, k_, K_, weights)
+        print(f"year: {yr}")
+        recs_ = rec_utils.get_recommendations_dict_many_model(yr, models, set_, k_, K_, weights)
         m_ = metrics_evaluators[yr].get_all_metrics(recs_, yr, set_, K_)
         print(m_)
     print("DONE")

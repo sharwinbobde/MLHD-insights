@@ -3,6 +3,7 @@ from math import isclose
 
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 
 def df_to_dict(df: pd.DataFrame) -> dict:
     return df \
@@ -28,7 +29,7 @@ class RecommendationUtils:
             raise ValueError("models and reranking_weights must be lists with the same size")
 
         if not isclose(np.sum(reranking_weights), 1.0, rel_tol=0.01):
-            raise ValueError("the list reranking_weights should sum up to one; provided "+str(reranking_weights))
+            raise ValueError("the list reranking_weights should sum up to 1 (with acceptable error of 1%)\nprovided: "+str(reranking_weights))
 
         list_df = []
         for i in range(len(models)):
@@ -79,3 +80,13 @@ class RecommendationUtils:
                 ["count"]
 
             return df.to_dict()
+    @staticmethod
+    def get_novelty_threshold(catalog: dict) -> (list[int], list[int], int):
+        df = pd.DataFrame()
+        df["rec_id"] = list(catalog.keys())
+        df["count"] = df.rec_id.map(lambda x: catalog[x])
+        novelty_threshold = df['count'].quantile(0.8)
+
+        return novelty_threshold
+
+
