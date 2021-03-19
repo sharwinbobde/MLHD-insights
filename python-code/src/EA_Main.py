@@ -5,7 +5,7 @@ from jmetal.util.evaluator import SparkEvaluator
 from jmetal.util.observer import ProgressBarObserver, VisualizerObserver
 from jmetal.util.termination_criterion import StoppingByEvaluations
 
-from config import num_processors
+from config import num_cpu
 from src.utils.RecSysProblem import RecSysProblem
 
 problem = RecSysProblem(models=["CF_user-rec", "CF_user-artist"],
@@ -23,7 +23,7 @@ algorithm = NSGAIII(
     reference_directions=UniformReferenceDirectionFactory(problem.number_of_objectives, n_points=50),
     mutation=PolynomialMutation(probability=1.0 / problem.number_of_variables, distribution_index=20),
     crossover=SBXCrossover(probability=1.0, distribution_index=20),
-    population_evaluator=SparkEvaluator(processes=num_processors),
+    population_evaluator=SparkEvaluator(processes=num_cpu),
     termination_criterion=StoppingByEvaluations(max_evaluations=max_evaluations)
 )
 algorithm.observable.register(observer=ProgressBarObserver(max=max_evaluations))

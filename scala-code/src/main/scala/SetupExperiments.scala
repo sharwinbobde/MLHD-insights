@@ -3,7 +3,7 @@ import io.circe._
 import io.circe.syntax._
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.types.{BooleanType, LongType, StringType, StructType}
+import org.apache.spark.sql.types.{BooleanType, IntegerType, LongType, StringType, StructType}
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession, _}
 import org.apache.spark.storage.StorageLevel
 import utils.PercentileApprox._
@@ -12,7 +12,7 @@ import java.io.{BufferedWriter, File, FileWriter}
 
 object SetupExperiments {
   val experiment_years: Array[Int] = (2005 to 2012).toArray
-  val visualization_years: Array[Int] = (2005 to 2014).toArray
+  val visualization_years: Array[Int] = (2005 to 2013).toArray
   var out_dir = ""
 
   def main(args: Array[String]) {
@@ -88,7 +88,6 @@ object SetupExperiments {
         sum("yr_2011"),
         sum("yr_2012"),
         sum("yr_2013"),
-        sum("yr_2014"),
       )
 
     item_listens_per_year

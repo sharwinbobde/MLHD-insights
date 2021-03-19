@@ -17,7 +17,8 @@ BACKTITLE="Backtitle here"
 TITLE="Title here"
 MENU="Choose one of the following options:"
 
-OPTIONS=(1 "add IDs for Nodes"
+OPTIONS=(
+         1 "add IDs for Nodes"
          2 "Setup Experiments"
          3 "Stats for Graph Properties"
          4 "Divide Dataset for Experiments"
