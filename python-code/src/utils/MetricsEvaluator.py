@@ -114,13 +114,13 @@ class MetricsEvaluator:
 
     def get_all_metrics(self, recs: dict, year: int, set_num: int, k: int) -> dict:
         m = {}
-        m['MAR@' + str(k)] = self.mark(recs, year, set_num, k)
-        m['MAR_filtered@' + str(k)] = self.mark_filter_valid(recs, year, set_num, k)
-        m['NaN_Prop@' + str(k)], _, _ = self.NaN_Proportion(recs, year, set_num)
-        m['Pers@' + str(k)] = self.personalization(recs)
-        m['Nov@' + str(k)] = self.novelty(recs, k)
-        m['Cov@' + str(k)] = self.coverage(recs)
-        m['Fam@' + str(k)] = self.familiarity(recs)
+        m['MAR'] = self.mark(recs, year, set_num, k)
+        m['MAR_filtered'] = self.mark_filter_valid(recs, year, set_num, k)
+        m['NaN_Prop'], _, _ = self.NaN_Proportion(recs, year, set_num)
+        m['Pers'] = self.personalization(recs)
+        m['Nov'] = self.novelty(recs, k)
+        m['Cov'] = self.coverage(recs)
+        m['Fam'] = self.familiarity(recs)
         return m
 
 
