@@ -1,14 +1,16 @@
 import os
 import re
+import sys
 
 from pyspark import StorageLevel
 from pyspark.conf import SparkConf
 from pyspark.context import SparkContext
 from pyspark.ml import Pipeline
-from pyspark.ml.feature import OneHotEncoder, StringIndexer, VectorAssembler, MinMaxScaler
+from pyspark.ml.feature import OneHotEncoder, StringIndexer, VectorAssembler, MinMaxScaler, RobustScaler
 from pyspark.ml.linalg import DenseVector
-from pyspark.sql import Column
-from pyspark.sql.functions import col, input_file_name, udf
+from pyspark.mllib.linalg import Vectors, VectorUDT
+from pyspark.sql import Column, DataFrame
+from pyspark.sql.functions import col, input_file_name, udf, lit
 from pyspark.sql.session import SparkSession
 from pyspark.sql.types import *
 import pyspark.sql.functions as F
@@ -16,6 +18,12 @@ import pandas as pd
 import numpy as np
 import pyspark.ml.feature
 from pyspark.ml.feature import BucketedRandomProjectionLSH, BucketedRandomProjectionLSHModel
+import re
+
+import config
+from src.AcousticBrainz.LSHBias import LSHBias
+
+LSH_NUM_BITS = int(2 ** 13)
 
 
 def flatten_df_structs(nested_df):
@@ -89,21 +97,80 @@ def one_hot_vector_to_array(v):
     return new_array
 
 
+@udf(returnType=ArrayType(IntegerType()))
+def hash_feature_vector_to_array_of_ints(v, W):
+    # same logic as hashing for a single item LSH.hash_single()
+    # hash_arr = LSH.hash_single(v)
+    X = [v]
+    # add 1 for the bias term
+    ones = np.ones(shape=(1, 1))
+    X = np.concatenate((X, ones), axis=1)
+    mul = np.matmul(W.transpose(), X.transpose()).transpose()
+    signs = np.sign(mul)
+
+    # convert to 0,1 instead of +1,-1
+    def func(x):
+        return int((x+1)/2)
+
+    _01 = np.vectorize(func)(signs)
+    hash_arr = _01[0]
+
+
+    # make 32 bit hashes and store as integers
+    out = []
+    for i in range(int(LSH_NUM_BITS / 32)):
+        arr = hash_arr[32 * i: 32 * i + 32]
+        int_val = int(''.join(map(str, arr)), base=2)
+        out.append(int_val)
+    return out
+
+
+def hash_features_matching_regex(df: DataFrame, pattern: str, feature_name: str):
+    r = re.compile(pattern)
+    feature_columns = df.columns
+    feature_columns.remove('rec_MBID')
+    feature_columns = list(filter(r.match, feature_columns))
+    print(feature_columns)
+    # Vector assembler + Max-Min(0-1) scaling
+    assembler = VectorAssembler(inputCols=feature_columns, outputCol="FeatureVector_unscaled")
+    scaler = MinMaxScaler(inputCol="FeatureVector_unscaled", outputCol="FeatureVector")
+    pipeline = Pipeline(stages=[assembler, scaler])
+
+    # drop feature columns and the unscaled features.
+    df = pipeline.fit(df).transform(df) \
+        .drop("FeatureVector_unscaled")
+
+    # define hashing functions
+    LSH = LSHBias(feature_dim=len(feature_columns), bits=LSH_NUM_BITS)
+    def vector_column(x):
+        return F.udf(lambda: x, VectorUDT())()
+    W = DenseVector(list(LSH.W))
+    hash_column_name = f"{feature_name}_hash_{LSH_NUM_BITS}_bits"
+    df = df\
+        .withColumn("W", vector_column(W))
+    df.show()
+    df = df\
+        .withColumn(
+        hash_column_name,
+        hash_feature_vector_to_array_of_ints(col("FeatureVector"), col("W"))) \
+        .drop("FeatureVector")
+    return df, hash_column_name
+
+
 if __name__ == '__main__':
-    memory = '3g'
-    pyspark_submit_args = ' --driver-memory ' + memory + ' pyspark-shell'
+    driver_memory = '3g'
+    pyspark_submit_args = ' --driver-memory ' + driver_memory + ' pyspark-shell'
     os.environ["PYSPARK_SUBMIT_ARGS"] = pyspark_submit_args
 
     spark = SparkSession \
         .builder \
-        .appName("ABz") \
+        .appName("ABz Preprocessing + LSH") \
         .config("spark.executor.memory", "8G") \
         .config("spark.driver.memory", "3G") \
         .getOrCreate()
 
     sc = spark.sparkContext
-    # path = "/run/media/sharwinbobde/SharwinThesis/mlhd-ab-features/acousticbrainz-mlhd-0123/00/"
-    path = "/run/media/sharwinbobde/SharwinThesis/ABz_features_subset/"
+    path = config.ABz_directory
     # read jsons and generate rec_MBID
     df_raw = spark.read.json(path, multiLine=True) \
         .withColumn("rec_MBID", MBID_from_filename(input_file_name()))
@@ -150,60 +217,29 @@ if __name__ == '__main__':
         df_ = df_.drop(name)
 
     # flatten array columns
-    df_ = flatten_df_arrays(df_)
+    df_ = flatten_df_arrays(df_)\
+        .persist(StorageLevel.DISK_ONLY)
 
     feature_columns = df_.columns
     feature_columns.remove('rec_MBID')
     print(f"Num features after one-hot encoding= {len(feature_columns)}")
 
-    # Vector assembler + Max-Min normalization
-    assembler = VectorAssembler(inputCols=feature_columns, outputCol="FeatureVector")
-    scaler = MinMaxScaler(inputCol="FeatureVector", outputCol="FeatureVector_scaled")
-    pipeline = Pipeline(stages=[assembler, scaler])
-    df_ = pipeline.fit(df_).transform(df_) \
-        .drop(*feature_columns) \
-        .drop("FeatureVector")
-    df_.printSchema()
-
-    # # experiment to select bucketLength and numHashTables
-    # for num_tables in [1, 5, 10, 25, 50, 100]:
-    #     for bucket_len in [1.0, 5.0, 10, 25.0, 50.0, 100.0]:
-    #         brp = BucketedRandomProjectionLSH(
-    #             inputCol="FeatureVector_scaled",
-    #             outputCol=f"hash_{num_tables}bit_{bucket_len}len",
-    #             seed=4242,
-    #             bucketLength=bucket_len,
-    #             numHashTables=num_tables)
-    #         df_ = brp.fit(df_).transform(df_)
-    # df_.show()
-
-    # If input vectors are normalized, 1-10 times of pow(numRecords, -1/inputDim) would be a reasonable value
-    # https://spark.apache.org/docs/2.3.0/api/scala/index.html#org.apache.spark.ml.feature.BucketedRandomProjectionLSHModel
-    num_tables_selected = 10
-    # bucket_len_selected = 5.0 * df_.count() ** (-1 / len(feature_columns))
-    bucket_len_selected = 1.0
-    print(f"num_tables = {num_tables_selected}\nbucket_len = {bucket_len_selected}")
-
-    brp = BucketedRandomProjectionLSH(
-        inputCol="FeatureVector_scaled",
-        outputCol=f"hash_1bit",
-        seed=4242,
-        bucketLength=bucket_len_selected,
-        numHashTables=num_tables_selected)
-    model = brp.fit(df_)
-
-    # key_df =
-    # model.approxNearestNeighbors(df_,key_df, 3).show()
+    refined_cols = ["rec_MBID"]
+    for p in [(r".*", "all_features"),
+              (r"tonal.*", "tonal"),
+              (r"rhythm.*", "rhythm"),
+              (r"lowlevel.*", "lowlevel"),
+              ]:
+        df_, colname = hash_features_matching_regex(df_, pattern=p[0], feature_name=p[1])
+        refined_cols.append(colname)
+    df_ = df_.select(*refined_cols)
 
     df_.printSchema()
-    df_.show()
-    print(df_.show(20, False))
-
-    # df_ \
-    #     .write \
-    #     .mode(saveMode='overwrite') \
-    #     .option("header", True) \
-    #     .orc("./scala-code/data/processed/ABzFeatures.orc")
+    df_ \
+        .write \
+        .mode(saveMode='overwrite') \
+        .option("header", True) \
+        .orc("./scala-code/data/processed/ABzFeatures.orc")
 
     sc.stop()
     print("Done")

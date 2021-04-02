@@ -24,6 +24,7 @@ OPTIONS=(
          4 "Divide Dataset for Experiments"
          5 "User-Record Collaborative Filtering"
          6 "User-Artist Collaborative Filtering"
+         7 "LSH Collision Analysis"
          )
 
 CHOICE=$(dialog --clear \
@@ -54,7 +55,11 @@ case $CHOICE in
         6)
             mainClass=CollaborativeFiltering_UserArtist
             ;;
+        7)
+            mainClass=LSHCollisionAnalysis
+            ;;
         *)
+            echo "Option did not match"
             exit 0
             ;;
 esac

@@ -1,8 +1,6 @@
 from pandas import DataFrame
 import numpy as np
 
-np.random.seed(4242)
-
 
 class LSHBias:
     def __init__(self, feature_dim: int, bits: int):
@@ -11,13 +9,13 @@ class LSHBias:
         self.create_hyperplanes()
 
     def create_hyperplanes(self):
-        # W = (D+1)xK matrix where k^th column is the normal vector for kth hyperplane
+        # W = (D+1) x K matrix where k^th column is the normal vector for kth hyperplane
         # D+1 because of bias term and considering all features are 0-1 scaled
         W = np.zeros(shape=(self.feature_dim + 1, self.bits), dtype=np.float)
-        for k in range(self.bits):
-            for i in range(self.feature_dim):
-                W[i, k] = np.random.uniform(-1, 1)
-            W[self.feature_dim, k] = np.random.uniform(0, 1)
+        # weights
+        W[0:self.feature_dim, :] = np.random.uniform(-1, 1, size=(self.feature_dim, self.bits))
+        # bias terms
+        W[self.feature_dim, :] = np.random.uniform(0, 1, size=(1, self.bits))
         self.W = W
 
     def hash_many(self, X):
@@ -29,12 +27,26 @@ class LSHBias:
 
         # convert to 0,1 instead of +1,-1
         def func(x):
-            if x == -1:
-                return 0
-            else:
-                return 1
+            return int((x+1)/2)
+
         _01 = np.vectorize(func)(signs)
         return _01
+
+    def hash_single(self, X):
+        # make 2 dimensional
+        X = [X]
+        # add 1 for the bias term
+        ones = np.ones(shape=(1, 1))
+        X = np.concatenate((X, ones), axis=1)
+        mul = np.matmul(self.W.transpose(), X.transpose()).transpose()
+        signs = np.sign(mul)
+
+        # convert to 0,1 instead of +1,-1
+        def func(x):
+            return int((x+1)/2)
+
+        _01 = np.vectorize(func)(signs)
+        return _01[0]
 
     def hash_to_categories(self, _01):
         out = []
