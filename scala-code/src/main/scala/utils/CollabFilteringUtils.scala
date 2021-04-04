@@ -61,7 +61,7 @@ class CollabFilteringUtils(val user_colname: String, val item_colname: String, v
     interactions
       .select(user_colname, item_colname, "years.*")
       .withColumnRenamed("yr_" + selected_year.toString, rating_colname)
-      .filter(rating_colname + " > " + rating_lower_threshold.toString)
+      .filter(s"$rating_colname >= $rating_lower_threshold")
       .join(user_ids, Seq(user_colname), joinType = "inner")
       .select(user_colname, item_colname, rating_colname)
       .persist(StorageLevel.DISK_ONLY)
