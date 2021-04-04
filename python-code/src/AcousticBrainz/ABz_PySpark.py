@@ -98,23 +98,11 @@ def one_hot_vector_to_array(v):
 
 
 @udf(returnType=ArrayType(IntegerType()))
-def hash_feature_vector_to_array_of_ints(v, W):
+def hash_feature_vector_to_array_of_ints(v, feature_name):
     # same logic as hashing for a single item LSH.hash_single()
     # hash_arr = LSH.hash_single(v)
-    X = [v]
-    # add 1 for the bias term
-    ones = np.ones(shape=(1, 1))
-    X = np.concatenate((X, ones), axis=1)
-    mul = np.matmul(W.transpose(), X.transpose()).transpose()
-    signs = np.sign(mul)
-
-    # convert to 0,1 instead of +1,-1
-    def func(x):
-        return int((x+1)/2)
-
-    _01 = np.vectorize(func)(signs)
-    hash_arr = _01[0]
-
+    lsh = LSH_per_feature_set[feature_name]
+    hash_arr = lsh.hash_single(v)
 
     # make 32 bit hashes and store as integers
     out = []
@@ -125,14 +113,9 @@ def hash_feature_vector_to_array_of_ints(v, W):
     return out
 
 
-def hash_features_matching_regex(df: DataFrame, pattern: str, feature_name: str):
-    r = re.compile(pattern)
-    feature_columns = df.columns
-    feature_columns.remove('rec_MBID')
-    feature_columns = list(filter(r.match, feature_columns))
-    print(feature_columns)
+def hash_features_matching_regex(df: DataFrame, feature_name: str):
     # Vector assembler + Max-Min(0-1) scaling
-    assembler = VectorAssembler(inputCols=feature_columns, outputCol="FeatureVector_unscaled")
+    assembler = VectorAssembler(inputCols=feature_columns_dict[feature_name], outputCol="FeatureVector_unscaled")
     scaler = MinMaxScaler(inputCol="FeatureVector_unscaled", outputCol="FeatureVector")
     pipeline = Pipeline(stages=[assembler, scaler])
 
@@ -140,20 +123,13 @@ def hash_features_matching_regex(df: DataFrame, pattern: str, feature_name: str)
     df = pipeline.fit(df).transform(df) \
         .drop("FeatureVector_unscaled")
 
-    # define hashing functions
-    LSH = LSHBias(feature_dim=len(feature_columns), bits=LSH_NUM_BITS)
-    def vector_column(x):
-        return F.udf(lambda: x, VectorUDT())()
-    W = DenseVector(list(LSH.W))
     hash_column_name = f"{feature_name}_hash_{LSH_NUM_BITS}_bits"
-    df = df\
-        .withColumn("W", vector_column(W))
-    df.show()
-    df = df\
+    df = df \
         .withColumn(
         hash_column_name,
-        hash_feature_vector_to_array_of_ints(col("FeatureVector"), col("W"))) \
-        .drop("FeatureVector")
+        hash_feature_vector_to_array_of_ints(col("FeatureVector"), lit(feature_name))) \
+        .drop("FeatureVector") \
+        .cache()
     return df, hash_column_name
 
 
@@ -217,21 +193,35 @@ if __name__ == '__main__':
         df_ = df_.drop(name)
 
     # flatten array columns
-    df_ = flatten_df_arrays(df_)\
+    df_ = flatten_df_arrays(df_) \
         .persist(StorageLevel.DISK_ONLY)
 
     feature_columns = df_.columns
     feature_columns.remove('rec_MBID')
     print(f"Num features after one-hot encoding= {len(feature_columns)}")
 
+    LSH_per_feature_set = {}
+    feature_columns_dict = {}
     refined_cols = ["rec_MBID"]
-    for p in [(r".*", "all_features"),
+    params = [(r".*", "all_features"),
               (r"tonal.*", "tonal"),
               (r"rhythm.*", "rhythm"),
               (r"lowlevel.*", "lowlevel"),
-              ]:
-        df_, colname = hash_features_matching_regex(df_, pattern=p[0], feature_name=p[1])
+              ]
+    for p in params:
+        r = re.compile(p[0])
+        feature_columns = df_.columns
+        feature_columns.remove('rec_MBID')
+        feature_columns = list(filter(r.match, feature_columns))
+
+        LSH = LSHBias(feature_dim=len(feature_columns), bits=LSH_NUM_BITS)
+        LSH_per_feature_set[p[1]] = LSH
+        feature_columns_dict[p[1]] = feature_columns
+
+    for p in params:
+        df_, colname = hash_features_matching_regex(df_, feature_name=p[1])
         refined_cols.append(colname)
+
     df_ = df_.select(*refined_cols)
 
     df_.printSchema()
