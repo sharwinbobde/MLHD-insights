@@ -3,21 +3,13 @@ import re
 import sys
 
 from pyspark import StorageLevel
-from pyspark.conf import SparkConf
-from pyspark.context import SparkContext
 from pyspark.ml import Pipeline
-from pyspark.ml.feature import OneHotEncoder, StringIndexer, VectorAssembler, MinMaxScaler, RobustScaler
+from pyspark.ml.feature import OneHotEncoder, StringIndexer, VectorAssembler, MinMaxScaler
 from pyspark.ml.linalg import DenseVector
-from pyspark.mllib.linalg import Vectors, VectorUDT
-from pyspark.sql import Column, DataFrame
 from pyspark.sql.functions import col, input_file_name, udf, lit
 from pyspark.sql.session import SparkSession
 from pyspark.sql.types import *
 import pyspark.sql.functions as F
-import pandas as pd
-import numpy as np
-import pyspark.ml.feature
-from pyspark.ml.feature import BucketedRandomProjectionLSH, BucketedRandomProjectionLSHModel
 import re
 
 import config
@@ -74,8 +66,10 @@ def flatten_df_arrays(df):
     df_max = df_sizes.agg(*[F.max(col_).alias(col_) for col_ in columns_to_flatten])
     max_dict = df_max.collect()[0].asDict()
 
-    df_result = df.select(*[col_ for col_ in columns_not_to_flatten],
-                          *[df[col_][i] for col_ in columns_to_flatten for i in range(max_dict[col_])])
+    cols = [col_ for col_ in columns_not_to_flatten]
+    cols = cols + [df[col_][i] for col_ in columns_to_flatten for i in
+                   range(max_dict[col_])]
+    df_result = df.select(*cols)
 
     # split columns by array and non array to see more nested structures
     columns_to_flatten, columns_not_to_flatten = get_array_and_non_array_column_names(df_result)
@@ -87,7 +81,8 @@ def flatten_df_arrays(df):
 
 @udf(returnType=StringType())
 def MBID_from_filename(s):
-    return re.search(r'[^/][^/]*(?=\.json)', s)[0]
+    out = re.search(r'[^\/][^\/]*(?=\.json)', s).group(0)
+    return out
 
 
 @udf(returnType=ArrayType(DoubleType()))
@@ -97,12 +92,33 @@ def one_hot_vector_to_array(v):
     return new_array
 
 
+def preprocess_features_matching_regex(df, feature_name):
+    # Vector assembler + Max-Min(0-1) scaling
+    assembler = VectorAssembler(inputCols=feature_columns_dict[feature_name],
+                                outputCol="FeatureVector_unscaled_" + feature_name)
+    scaler = MinMaxScaler(inputCol="FeatureVector_unscaled_" + feature_name, outputCol="FeatureVector_" + feature_name)
+    pipeline = Pipeline(stages=[assembler, scaler])
+
+    # drop feature columns and the unscaled features.
+    df = pipeline.fit(df).transform(df) \
+        .drop("FeatureVector_unscaled_" + feature_name)
+    return df
+
+
+def hash_features_matching_regex(df, feature_name):
+    hash_column_name = str(feature_name) + "_hash_" + str(LSH_NUM_BITS) + "_bits"
+    df = df \
+        .withColumn(
+        hash_column_name,
+        hash_feature_vector_to_array_of_ints(col("FeatureVector_" + feature_name), lit(feature_name))) \
+        .drop("FeatureVector_" + feature_name)
+    return df, hash_column_name
+
+
 @udf(returnType=ArrayType(IntegerType()))
 def hash_feature_vector_to_array_of_ints(v, feature_name):
     # same logic as hashing for a single item LSH.hash_single()
-    # hash_arr = LSH.hash_single(v)
-    lsh = LSH_per_feature_set[feature_name]
-    hash_arr = lsh.hash_single(v)
+    hash_arr = LSH_per_feature_set[feature_name].hash_single(v)
 
     # make 32 bit hashes and store as integers
     out = []
@@ -113,26 +129,6 @@ def hash_feature_vector_to_array_of_ints(v, feature_name):
     return out
 
 
-def hash_features_matching_regex(df: DataFrame, feature_name: str):
-    # Vector assembler + Max-Min(0-1) scaling
-    assembler = VectorAssembler(inputCols=feature_columns_dict[feature_name], outputCol="FeatureVector_unscaled")
-    scaler = MinMaxScaler(inputCol="FeatureVector_unscaled", outputCol="FeatureVector")
-    pipeline = Pipeline(stages=[assembler, scaler])
-
-    # drop feature columns and the unscaled features.
-    df = pipeline.fit(df).transform(df) \
-        .drop("FeatureVector_unscaled")
-
-    hash_column_name = f"{feature_name}_hash_{LSH_NUM_BITS}_bits"
-    df = df \
-        .withColumn(
-        hash_column_name,
-        hash_feature_vector_to_array_of_ints(col("FeatureVector"), lit(feature_name))) \
-        .drop("FeatureVector") \
-        .cache()
-    return df, hash_column_name
-
-
 if __name__ == '__main__':
     driver_memory = '3g'
     pyspark_submit_args = ' --driver-memory ' + driver_memory + ' pyspark-shell'
@@ -141,21 +137,32 @@ if __name__ == '__main__':
     spark = SparkSession \
         .builder \
         .appName("ABz Preprocessing + LSH") \
-        .config("spark.executor.memory", "8G") \
-        .config("spark.driver.memory", "3G") \
+        .config("spark.executor.memory", "2G") \
+        .config("spark.driver.memory", "2G") \
         .getOrCreate()
 
     sc = spark.sparkContext
-    path = config.ABz_directory
+
+    # directory with all json files
+    path = config.ABz_directory_subset
     # read jsons and generate rec_MBID
-    df_raw = spark.read.json(path, multiLine=True) \
-        .withColumn("rec_MBID", MBID_from_filename(input_file_name()))
+    df_raw = spark.read \
+        .json(path, multiLine=True) \
+        .withColumn("rec_MBID", MBID_from_filename(input_file_name())) \
+        .drop("metadata")
 
-    # drop irrelevant:  metadata ... all of it
-    df_cleaned = df_raw.drop("metadata")
+    # directory structure with json files in different folders
+    # dfs = [spark.read.json(config.ABZ_nested_directories + '*/*').drop("metadata")]
+    # df_raw = reduce(lambda a, b: a.union(b), dfs)
 
+    df_raw.printSchema()
+
+    # ===============================================================================
     # flatten struct columns
-    df_ = flatten_df_structs(df_cleaned)
+    df_ = flatten_df_structs(df_raw)
+
+    print(df_.columns)
+    print(len(df_.columns))
     # drop noisy item: parents:['rhythm'];  key:beats_position
     df_ = df_.drop("rhythm_beats_position")
     # flatten array columns
@@ -163,8 +170,9 @@ if __name__ == '__main__':
 
     feature_columns = df_.columns
     feature_columns.remove('rec_MBID')
-    print(f"Num features = {len(feature_columns)}")
+    print("Num features = " + str(len(feature_columns)))
 
+    # ===============================================================================
     # one-hot encoding for string columns columns
     # string item: parents:['tonal'];  key:chords_key
     # string item: parents:['tonal'];  key:chords_scale
@@ -175,7 +183,7 @@ if __name__ == '__main__':
     indexed_names = list(map(lambda x: x + '_indexed', categorical_features_names))
     encoded_names = list(map(lambda x: x + '_encoded', indexed_names))
     indexer = StringIndexer(inputCols=categorical_features_names,
-                            outputCols=indexed_names)
+                            outputCols=indexed_names).setHandleInvalid("keep")
     df_ = indexer.fit(df_).transform(df_) \
         .drop(*categorical_features_names)
 
@@ -198,11 +206,11 @@ if __name__ == '__main__':
 
     feature_columns = df_.columns
     feature_columns.remove('rec_MBID')
-    print(f"Num features after one-hot encoding= {len(feature_columns)}")
+    print("Num features after one-hot encoding= " + str(len(feature_columns)))
 
+    # ===============================================================================
     LSH_per_feature_set = {}
     feature_columns_dict = {}
-    refined_cols = ["rec_MBID"]
     params = [(r".*", "all_features"),
               (r"tonal.*", "tonal"),
               (r"rhythm.*", "rhythm"),
@@ -219,11 +227,19 @@ if __name__ == '__main__':
         feature_columns_dict[p[1]] = feature_columns
 
     for p in params:
+        df_ = preprocess_features_matching_regex(df_, feature_name=p[1])
+
+    cols = ['rec_MBID'] + ['FeatureVector_' + p[1] for p in params]
+    df_ = df_.select(*cols).persist(StorageLevel.DISK_ONLY)
+
+    refined_cols = ["rec_MBID"]
+    for p in params:
         df_, colname = hash_features_matching_regex(df_, feature_name=p[1])
         refined_cols.append(colname)
 
     df_ = df_.select(*refined_cols)
 
+    # ===============================================================================
     df_.printSchema()
     df_ \
         .write \

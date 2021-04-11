@@ -26,6 +26,7 @@ OPTIONS=(
          6 "User-Artist Collaborative Filtering"
          7 "LSH Collision Analysis"
          8 "ABz Nearest-Neighbour Recommenders"
+         9 "TestAzureStorage"
          )
 
 CHOICE=$(dialog --clear \
@@ -61,6 +62,9 @@ case $CHOICE in
             ;;
         8)
             mainClass=ABzRecommenders
+            ;;
+        9)
+            mainClass=TestAzureStorage
             ;;
         *)
             echo "Option did not match"
