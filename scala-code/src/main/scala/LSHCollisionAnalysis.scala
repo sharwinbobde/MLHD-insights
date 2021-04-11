@@ -7,6 +7,8 @@ import utils.LSHUtils
 object LSHCollisionAnalysis {
   var out_dir = ""
 
+  val LSH_bits: Int = scala.math.pow(2, 13).toInt
+
   def main(args: Array[String]) {
     // Turn off copious logging
     Logger.getLogger("org").setLevel(Level.ERROR)
@@ -34,7 +36,6 @@ object LSHCollisionAnalysis {
     df = df.as("_1").crossJoin(df.as("_2"))
     df.printSchema()
 
-    val LSH_bits = 8192
     val hash_cols = Array(
       s"all_features_hash_${LSH_bits}_bits",
       s"tonal_hash_${LSH_bits}_bits",

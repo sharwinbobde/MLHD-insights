@@ -62,14 +62,34 @@ object ABzRecommenders {
 
     // TODO compute distances only once and reuse them
 
-    testRecommendationsGeneration(user_recs_interactions, feature_hashes, spark)
+    var distances = feature_hashes
+      .as("_1")
+      .withColumnRenamed("rec_id", "rec_id_from")
+      .crossJoin(feature_hashes
+        .as("_2")
+        .withColumnRenamed("rec_id", "rec_id_to"))
+
+    feature_sets.foreach(feature_set => {
+      distances = distances
+        .withColumn("dist",
+          LSHUtils.hammingDistUDF(
+            col(s"_1.${hash_cols(feature_set)}"),
+            col(s"_2.${hash_cols(feature_set)}"),
+          )
+        )
+    })
+    distances.persist(StorageLevel.DISK_ONLY)
+    distances.printSchema()
+
+    // Generate recommendations
+    testRecommendationsGeneration(user_recs_interactions, distances, spark)
 
     // Stop the underlying SparkContext
     sc.stop
     System.exit(0)
   }
 
-  def testRecommendationsGeneration(user_recs_interactions: Dataset[Row], feature_hashes: Dataset[Row], sparkSession: SparkSession): Unit = {
+  def testRecommendationsGeneration(user_recs_interactions: Dataset[Row], distances: Dataset[Row], sparkSession: SparkSession): Unit = {
     println("Generatinng recommendations for test users.")
     experiment_years.foreach(year => {
       feature_sets.foreach(feature_set => {
@@ -99,7 +119,7 @@ object ABzRecommenders {
             test_user_ids, year)
             .persist(StorageLevel.DISK_ONLY)
 
-          val recommendations = recommend(test_train_interactions, train_interactions, feature_hashes, feature_set)
+          val recommendations = recommend(test_train_interactions, train_interactions, distances)
 
 
           test_train_interactions.unpersist()
@@ -110,7 +130,7 @@ object ABzRecommenders {
             .write
             .mode(SaveMode.Overwrite)
             .option("header", "true")
-            .csv(s"${out_dir}output/year_${year}ABz_${feature_set}set_${set}.csv")
+            .csv(s"${out_dir}output/year_${year}_ABz_${feature_set}_set_${set}.csv")
         })
       })
     })
@@ -128,41 +148,19 @@ object ABzRecommenders {
 
   def recommend(test_train_interactions: Dataset[Row],
                 train_interactions: Dataset[Row],
-                feature_hashes: Dataset[Row],
-                feature_set: String): Dataset[Row] = {
+                distances: Dataset[Row]): Dataset[Row] = {
     // Nearest Neighbour Algorithm
     // get all rec_ids (train + test_train), drop duplicates and join with feature_hashes
-    val feature_hashes_for_set = test_train_interactions
-      .select("rec_id")
-      .union(train_interactions.select("rec_id"))
-      .dropDuplicates()
-      .join(feature_hashes, Seq("rec_id"), "inner")
-      .select("rec_id", hash_cols(feature_set))
+//    val feature_hashes_for_set = test_train_interactions
+//      .select("rec_id")
+//      .union(train_interactions.select("rec_id"))
+//      .dropDuplicates()
+//      .join(distances, Seq("rec_id"), "inner")
+//      .select("rec_id", hash_cols(feature_set))
 
     // which songs did the test user listen to and how often?
     val test_listens = test_train_interactions
       .select("user_id", "rec_id", "listens")
-
-    // do a cross_join with itself and find hamming distance
-    //    root
-    //    |-- rec_id_from: long (nullable = false)
-    //    |-- rec_id_to: long (nullable = false)
-    //    |-- dist: integer (nullable = false)
-    val distances = feature_hashes_for_set
-      .as("_1")
-      .withColumnRenamed("rec_id", "rec_id_from")
-      .crossJoin(feature_hashes_for_set
-        .as("_2")
-        .withColumnRenamed("rec_id", "rec_id_to"))
-      .withColumn("dist",
-        LSHUtils.hammingDistUDF(
-          col(s"_1.${hash_cols(feature_set)}"),
-          col(s"_2.${hash_cols(feature_set)}"),
-        )
-      )
-      .select("rec_id_from", "rec_id_to", "dist")
-//    distances.printSchema()
-
 
     // In the training data, how popular was each recording?
     //    root
@@ -179,7 +177,7 @@ object ABzRecommenders {
         sum("listens").as("total_train_listens"),
         sum("lit_1").as("total_train_users"),
       )
-//    train_rec_listens.printSchema()
+    //    train_rec_listens.printSchema()
 
     // In the training data, which recordings were listened to together and how much?
     //    root
@@ -197,19 +195,19 @@ object ABzRecommenders {
       .groupBy("rec_id_from", "rec_id_to")
       .count()
       .withColumnRenamed("count", "inferred_relation")
-//    train_rec_inferred_relation.printSchema()
+    //    train_rec_inferred_relation.printSchema()
 
 
     // aggregate together with joins
-//    root
-//    |-- rec_id_from: long (nullable = false)
-//    |-- rec_id_to: long (nullable = false)
-//    |-- user_id: long (nullable = false)
-//    |-- listens: integer (nullable = false)
-//    |-- dist: integer (nullable = false)
-//    |-- total_train_listens: long (nullable = true)
-//    |-- total_train_users: long (nullable = true)
-//    |-- inferred_relation: long (nullable = false)
+    //    root
+    //    |-- rec_id_from: long (nullable = false)
+    //    |-- rec_id_to: long (nullable = false)
+    //    |-- user_id: long (nullable = false)
+    //    |-- listens: integer (nullable = false)
+    //    |-- dist: integer (nullable = false)
+    //    |-- total_train_listens: long (nullable = true)
+    //    |-- total_train_users: long (nullable = true)
+    //    |-- inferred_relation: long (nullable = false)
     var df = test_listens.withColumnRenamed("rec_id", "rec_id_from")
       .join(distances,
         "rec_id_from")
@@ -218,7 +216,7 @@ object ABzRecommenders {
       .join(train_rec_inferred_relation,
         Seq("rec_id_from", "rec_id_to")
       )
-//    df.printSchema()
+    //    df.printSchema()
 
     // use Windowing to group by user, find nearest neighbours and rank by listens.
     val window = Window.partitionBy("user_id")
@@ -234,7 +232,7 @@ object ABzRecommenders {
       .filter(s"rank <= $items_to_recommend")
       .withColumnRenamed("rec_id_to", "rec_id")
       .select("user_id", "rec_id", "rank")
-//    df.printSchema()
+    //    df.printSchema()
 
     df
   }
