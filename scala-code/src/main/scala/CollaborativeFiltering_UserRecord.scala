@@ -45,9 +45,9 @@ object CollaborativeFiltering_UserRecord {
     val user_recs_interactions = arangoDBHandler.getUserToRecordingEdges()
 
     // CrossValidation for hyperparameter tuning
-    hyperparameterTuning(user_recs_interactions, spark)
+//    hyperparameterTuning(user_recs_interactions, spark)
 
-    //    testRecommendationsGeneration(user_recs_interactions, spark)
+    testRecommendationsGeneration(user_recs_interactions, spark)
 
     // Stop the underlying SparkContext
     sc.stop
@@ -58,8 +58,8 @@ object CollaborativeFiltering_UserRecord {
     experiment_years.foreach(year => {
       println("year " + year.toString)
       val randGrid = new RandomGridGenerator(RandomGrid_samples)
-        .addDistr("latentFactors", (5 to 20).toArray)
-        .addDistr("maxItr", (5 to 25).toArray)
+        .addDistr("latentFactors", (5 to 30).toArray)
+        .addDistr("maxItr", (3 to 25).toArray)
         .addDistr("regularizingParam", Uniform(0.001, 2))
         .addDistr("alpha", Uniform(0.1, 3))
         .getSamples()
@@ -157,7 +157,7 @@ object CollaborativeFiltering_UserRecord {
       recommendations
         .write
         .mode(SaveMode.Overwrite)
-        .orc(out_dir + s"output-${RS_or_EA}/CF-user_rec/year-${year}_CF-user_rec-set_${set}.orc")
+        .orc(out_dir + s"output-${RS_or_EA}/CF-user_rec/year_${year}-CF-user_rec-set_${set}.orc")
     })
   }
 }

@@ -145,39 +145,4 @@ object DatasetDivision {
     (train, test)
   }
 
-//  def createCrossvalTrainValForYear(fold: (RDD[Row], RDD[Row]), fold_num: Int, year: Int, spark: SparkSession): Unit = {
-//    val fold_train = spark.createDataFrame(rowRDD = fold._1, new StructType().add("user_id", LongType, nullable = false))
-//    val fold_validation = spark.createDataFrame(rowRDD = fold._2, new StructType().add("user_id", LongType, nullable = false))
-//
-//    fold_train.coalesce(1)
-//      .write
-//      .mode(SaveMode.Overwrite)
-//      .option("header", "true")
-//      .csv(out_dir + "crossval/year_" + year.toString + "_cv_fold_" + fold_num.toString + "_train.csv")
-//
-//    fold_validation.coalesce(1)
-//      .write
-//      .mode(SaveMode.Overwrite)
-//      .option("header", "true")
-//      .csv(out_dir + "crossval/year_" + year.toString + "_cv_fold_" + fold_num.toString + "_validation.csv")
-//
-//  }
-
-//  def createSimpleTrainValForYear(train: Dataset[Row], year: Int): Unit = {
-//    val Array(fold_train, fold_validation) = train.randomSplit(Array(0.7, 0.3), 424356)
-//
-//    fold_train.coalesce(1)
-//      .write
-//      .mode(SaveMode.Overwrite)
-//      .option("header", "true")
-//      .csv(out_dir + "simple-train-val/year_" + year.toString + "_train.csv")
-//
-//    fold_validation.coalesce(1)
-//      .write
-//      .mode(SaveMode.Overwrite)
-//      .option("header", "true")
-//      .csv(out_dir + "simple-train-val/year_" + year.toString + "_validation.csv")
-//
-//  }
-
 }

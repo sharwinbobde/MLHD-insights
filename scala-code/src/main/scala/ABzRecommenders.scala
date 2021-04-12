@@ -60,14 +60,14 @@ object ABzRecommenders {
     val num_valid_records = feature_hashes.count()
     println(s"num_valid_records = $num_valid_records")
 
-    // TODO compute distances only once and reuse them
-
+    // compute distances only once and reuse them
     var distances = feature_hashes
       .as("_1")
       .withColumnRenamed("rec_id", "rec_id_from")
       .crossJoin(feature_hashes
         .as("_2")
         .withColumnRenamed("rec_id", "rec_id_to"))
+      .persist(StorageLevel.DISK_ONLY)
 
     feature_sets.foreach(feature_set => {
       distances = distances
@@ -126,11 +126,9 @@ object ABzRecommenders {
           train_interactions.unpersist()
 
           recommendations
-            .coalesce(1)
             .write
             .mode(SaveMode.Overwrite)
-            .option("header", "true")
-            .csv(s"${out_dir}output/year_${year}_ABz_${feature_set}_set_${set}.csv")
+            .orc(s"${out_dir}output/year_${year}_ABz_${feature_set}_set_${set}.orc")
         })
       })
     })
@@ -216,7 +214,7 @@ object ABzRecommenders {
       .join(train_rec_inferred_relation,
         Seq("rec_id_from", "rec_id_to")
       )
-    //    df.printSchema()
+    //    user_rec_interactions.printSchema()
 
     // use Windowing to group by user, find nearest neighbours and rank by listens.
     val window = Window.partitionBy("user_id")
@@ -232,7 +230,7 @@ object ABzRecommenders {
       .filter(s"rank <= $items_to_recommend")
       .withColumnRenamed("rec_id_to", "rec_id")
       .select("user_id", "rec_id", "rank")
-    //    df.printSchema()
+    //    user_rec_interactions.printSchema()
 
     df
   }

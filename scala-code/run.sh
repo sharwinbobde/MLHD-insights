@@ -19,7 +19,7 @@ MENU="Choose one of the following options:"
 
 OPTIONS=(
          1 "add IDs for Nodes"
-         2 "Setup Experiments"
+         2 "MLHD Analysis"
          3 "Stats for Graph Properties"
          4 "Divide Dataset for Experiments"
          5 "User-Record Collaborative Filtering"
@@ -43,7 +43,7 @@ case $CHOICE in
             mainClass=IDsForNodes
             ;;
         2)
-            mainClass=SetupExperiments
+            mainClass=MLHD_Analysis
             ;;
         3)
             mainClass=GraphProperties

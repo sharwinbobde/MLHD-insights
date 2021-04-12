@@ -9,7 +9,7 @@ from src.utils.RecommendationUtils import RecommendationUtils
 import matplotlib.pyplot as plt
 
 data_stem = "../../scala-code/data/processed/"
-rec_utils = RecommendationUtils(data_stem)
+rec_utils = RecommendationUtils(data_stem, "RS")
 
 
 class MetricsEvaluator:
@@ -132,7 +132,7 @@ if __name__ == '__main__':
     k_ = 20
     set_ = 1
     print("Test for single recommenders")
-    for model in ["CF_user-rec", "CF_user-artist"]:
+    for model in ["CF-user_rec", "CF-user_artist"]:
         print("\nmodel = " + model)
         for yr in experiment_years:
             print(f"year: {yr}")
@@ -141,7 +141,7 @@ if __name__ == '__main__':
             print(m)
 
     print("\nTest for multiple recommenders")
-    models = ["CF_user-rec", "CF_user-artist"]
+    models = ["CF-user_rec", "CF-user_artist"]
     weights = [0.05, 0.95]
     K_ = k_
     for yr in experiment_years:

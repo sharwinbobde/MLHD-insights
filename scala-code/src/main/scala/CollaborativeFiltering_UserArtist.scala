@@ -131,7 +131,7 @@ object CollaborativeFiltering_UserArtist {
       postprocessExpansionArtistToRecordings(recommendations, artist_rec_interactions, user_rec_interactions, year)
         .write
         .mode(SaveMode.Overwrite)
-        .orc(out_dir + s"output-${RS_or_EA}/CF-user_artist/year-${year}_CF-user_artist-set_${set}.orc")
+        .orc(out_dir + s"output-${RS_or_EA}/CF-user_artist/year_${year}-CF-user_artist-set_${set}.orc")
     })
   }
 

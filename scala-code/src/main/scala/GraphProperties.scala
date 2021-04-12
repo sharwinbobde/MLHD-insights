@@ -74,7 +74,6 @@ object GraphProperties {
     val df_sums = df.select("years.*")
       .filter(col("part") <= parts)
       .agg(
-        sum("yr_2004").alias("sum_2004"),
         sum("yr_2005").alias("sum_2005"),
         sum("yr_2006").alias("sum_2006"),
         sum("yr_2007").alias("sum_2007"),
@@ -84,12 +83,6 @@ object GraphProperties {
         sum("yr_2011").alias("sum_2011"),
         sum("yr_2012").alias("sum_2012"),
         sum("yr_2013").alias("sum_2013"),
-        sum("yr_2014").alias("sum_2014"),
-        sum("yr_2015").alias("sum_2015"),
-        sum("yr_2016").alias("sum_2016"),
-        sum("yr_2017").alias("sum_2017"),
-        sum("yr_2018").alias("sum_2018"),
-        sum("yr_2019").alias("sum_2019"),
       )
     df_sums.collect.map(r => Map(df_sums.columns.zip(r.toSeq): _*))
   }
