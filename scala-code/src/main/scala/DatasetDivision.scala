@@ -45,69 +45,40 @@ object DatasetDivision {
         )
         .csv(out_dir + "year_" + year.toString + "_subscribers.csv")
 
-      val Array(train, test) = subscribed_users.randomSplit(Array(0.7, 0.3), 424356)
+      val Array(train, test_RS, test_EA) = subscribed_users.randomSplit(Array(0.6, 0.2, 0.2), 424356)
       println("\nyear " + year.toString)
-      println("trainSize = " + train.count().toString)
-      println("testSize = " + test.count().toString)
+      println("train size = " + train.count().toString)
+      println("test_RS size= " + test_RS.count().toString)
+      println("test_EA size= " + test_EA.count().toString)
 
-      train.coalesce(1)
+      train
         .write
         .mode(SaveMode.Overwrite)
-        .option("header", "true")
-        .csv(out_dir + "holdout/year_" + year.toString + "_train.csv")
-
-      //  Save test users
-      test.coalesce(1)
+        .orc(out_dir + s"holdout/users/year-${year}-train.orc")
+      test_RS
         .write
         .mode(SaveMode.Overwrite)
-        .option("header", "true")
-        .csv(out_dir + "holdout/year_" + year.toString + "_test.csv")
+        .orc(out_dir + s"holdout/users/year-${year}-test_RS.orc")
+      test_EA
+        .write
+        .mode(SaveMode.Overwrite)
+        .orc(out_dir + s"holdout/users/year-${year}-test_EA.orc")
 
-      //      Create Simple train and validation folds
-      createSimpleTrainValForYear(train, year)
-      //      Create Crossvalidation train and validation folds
-      val kFolds = MLUtils.kFold(train.rdd, 5, 4242)
+//      //      Create Simple train and validation folds
+//      createSimpleTrainValForYear(train, year)
+//
+//      //      Create Crossvalidation train and validation folds
+//      val kFolds = MLUtils.kFold(train.rdd, 5, 4242)
+//
+//      var fold_num = 1
+//      kFolds.foreach((fold: (RDD[Row], RDD[Row])) => {
+//        createCrossvalTrainValForYear(fold, fold_num, year, spark)
+//        fold_num += 1
+//      })
 
-      var fold_num = 1
-      kFolds.foreach((fold: (RDD[Row], RDD[Row])) => {
-        createCrossvalTrainValForYear(fold, fold_num, year, spark)
-        fold_num += 1
-      })
-
-      // Save 3 sets of randomly selected test interactions
-      (1 to 3).foreach(set => {
-        val test_interactions = user_rec_interactions
-          .select("user_id", "_key")
-          .join(test,
-            Seq("user_id"),
-            "inner")
-
-        val (test_train, test_test) = splitTestInteractionsUniformlyAcrossUsers(test_interactions)
-
-        test_train.coalesce(1)
-          .write
-          .mode(SaveMode.Overwrite)
-          .option("header", "true")
-          .csv(out_dir + "holdout/year_" + year.toString + "_test_train_interactions_set_" + set.toString + ".csv")
-
-        test_test.coalesce(1)
-          .write
-          .mode(SaveMode.Overwrite)
-          .option("header", "true")
-          .csv(out_dir + "holdout/year_" + year.toString + "_test_test_interactions_set_" + set.toString + ".csv")
-
-        val test_test_user_item = user_rec_interactions
-          .join(test_test, Seq("_key"), "inner")
-          .select("user_id", "rec_id")
-
-        test_test_user_item
-          .coalesce(1)
-          .write
-          .mode(SaveMode.Overwrite)
-          .option("header", "true")
-          .csv(out_dir + "holdout/year_" + year.toString + "_test_test_interactions_user-item_set_" + set.toString + ".csv")
-      })
-
+      // Save 3 sets of test *interactions* for each test test which are randomly sampled for each user.
+      create3SetsOfInteractions(test_RS, "test_RS", year, user_rec_interactions)
+      create3SetsOfInteractions(test_EA, "test_EA", year, user_rec_interactions)
     })
 
 
@@ -116,9 +87,40 @@ object DatasetDivision {
     System.exit(0)
   }
 
+  def create3SetsOfInteractions(df: DataFrame, name: String, year:Int, user_rec_interactions: DataFrame):Unit={
+    val test_interactions = user_rec_interactions
+      .select("user_id", "_key")
+      .join(df,
+        Seq("user_id"),
+        "inner")
+
+    (1 to 3).foreach(set => {
+    val (test_train, test_test) = splitTestInteractionsUniformlyAcrossUsers(test_interactions)
+
+    test_train
+      .write
+      .mode(SaveMode.Overwrite)
+      .orc(out_dir + s"holdout/interactions/year_${year}-${name}-train_interactions-set_${set}.orc")
+
+    test_test
+      .write
+      .mode(SaveMode.Overwrite)
+      .orc(out_dir + s"holdout/interactions/year_${year}-${name}_test-interactions-set_${set}.orc")
+
+    val test_test_user_item = user_rec_interactions
+      .join(test_test, Seq("_key"), "inner")
+      .select("user_id", "rec_id")
+
+    test_test_user_item
+      .write
+      .mode(SaveMode.Overwrite)
+      .orc(out_dir + s"holdout/interactions/year_${year}-${name}_test-interactions-user_item-set_${set}.orc")
+    })
+  }
+
   def splitTestInteractionsUniformlyAcrossUsers(test_interactions: DataFrame): (DataFrame, DataFrame) = {
     val splitting_udf = udf((keys: mutable.WrappedArray[String]) => {
-      val (train_indexes, test_indexes) = scala.util.Random.shuffle((0 until keys.length).toList).splitAt((keys.length / 2).ceil.toInt)
+      val (train_indexes, test_indexes) = scala.util.Random.shuffle(keys.indices.toList).splitAt((keys.length / 2).ceil.toInt)
       Array(train_indexes.map(keys)(breakOut), test_indexes.map(keys)(breakOut))
     })
 
@@ -143,39 +145,39 @@ object DatasetDivision {
     (train, test)
   }
 
-  def createCrossvalTrainValForYear(fold: (RDD[Row], RDD[Row]), fold_num: Int, year: Int, spark: SparkSession): Unit = {
-    val fold_train = spark.createDataFrame(rowRDD = fold._1, new StructType().add("user_id", LongType, nullable = false))
-    val fold_validation = spark.createDataFrame(rowRDD = fold._2, new StructType().add("user_id", LongType, nullable = false))
+//  def createCrossvalTrainValForYear(fold: (RDD[Row], RDD[Row]), fold_num: Int, year: Int, spark: SparkSession): Unit = {
+//    val fold_train = spark.createDataFrame(rowRDD = fold._1, new StructType().add("user_id", LongType, nullable = false))
+//    val fold_validation = spark.createDataFrame(rowRDD = fold._2, new StructType().add("user_id", LongType, nullable = false))
+//
+//    fold_train.coalesce(1)
+//      .write
+//      .mode(SaveMode.Overwrite)
+//      .option("header", "true")
+//      .csv(out_dir + "crossval/year_" + year.toString + "_cv_fold_" + fold_num.toString + "_train.csv")
+//
+//    fold_validation.coalesce(1)
+//      .write
+//      .mode(SaveMode.Overwrite)
+//      .option("header", "true")
+//      .csv(out_dir + "crossval/year_" + year.toString + "_cv_fold_" + fold_num.toString + "_validation.csv")
+//
+//  }
 
-    fold_train.coalesce(1)
-      .write
-      .mode(SaveMode.Overwrite)
-      .option("header", "true")
-      .csv(out_dir + "crossval/year_" + year.toString + "_cv_fold_" + fold_num.toString + "_train.csv")
-
-    fold_validation.coalesce(1)
-      .write
-      .mode(SaveMode.Overwrite)
-      .option("header", "true")
-      .csv(out_dir + "crossval/year_" + year.toString + "_cv_fold_" + fold_num.toString + "_validation.csv")
-
-  }
-
-  def createSimpleTrainValForYear(train: Dataset[Row], year: Int): Unit = {
-    val Array(fold_train, fold_validation) = train.randomSplit(Array(0.7, 0.3), 424356)
-
-    fold_train.coalesce(1)
-      .write
-      .mode(SaveMode.Overwrite)
-      .option("header", "true")
-      .csv(out_dir + "simple-train-val/year_" + year.toString + "_train.csv")
-
-    fold_validation.coalesce(1)
-      .write
-      .mode(SaveMode.Overwrite)
-      .option("header", "true")
-      .csv(out_dir + "simple-train-val/year_" + year.toString + "_validation.csv")
-
-  }
+//  def createSimpleTrainValForYear(train: Dataset[Row], year: Int): Unit = {
+//    val Array(fold_train, fold_validation) = train.randomSplit(Array(0.7, 0.3), 424356)
+//
+//    fold_train.coalesce(1)
+//      .write
+//      .mode(SaveMode.Overwrite)
+//      .option("header", "true")
+//      .csv(out_dir + "simple-train-val/year_" + year.toString + "_train.csv")
+//
+//    fold_validation.coalesce(1)
+//      .write
+//      .mode(SaveMode.Overwrite)
+//      .option("header", "true")
+//      .csv(out_dir + "simple-train-val/year_" + year.toString + "_validation.csv")
+//
+//  }
 
 }

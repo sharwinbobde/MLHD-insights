@@ -1,8 +1,9 @@
+import DatasetDivision.out_dir
 import breeze.stats.distributions._
 import io.circe._
 import io.circe.syntax._
 import org.apache.log4j.{Level, Logger}
-import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
+import org.apache.spark.sql.{DataFrame, Dataset, Row, SaveMode, SparkSession}
 import utils.{CF_selected_hyperparms, CollabFilteringUtils, RandomGridGenerator}
 
 import java.io.{BufferedWriter, File, FileWriter}
@@ -15,15 +16,12 @@ object CollaborativeFiltering_UserRecord {
   val experiment_years: Array[Int] = Array(2005, 2008, 2012)
 
   val rating_lower_threshold = 25
-
-  var out_dir = ""
-
   val CF_utils: CollabFilteringUtils = new CollabFilteringUtils(
     "user_id",
     "rec_id",
     ratingCol)
-
   val RandomGrid_samples = 10
+  var out_dir = ""
 
   def main(args: Array[String]) {
     // Turn off copious logging
@@ -47,58 +45,13 @@ object CollaborativeFiltering_UserRecord {
     val user_recs_interactions = arangoDBHandler.getUserToRecordingEdges()
 
     // CrossValidation for hyperparameter tuning
-//    hyperparameterTuning(user_recs_interactions, spark)
+    hyperparameterTuning(user_recs_interactions, spark)
 
-    testRecommendationsGeneration(user_recs_interactions, spark)
+    //    testRecommendationsGeneration(user_recs_interactions, spark)
 
     // Stop the underlying SparkContext
     sc.stop
     System.exit(0)
-  }
-
-  def testRecommendationsGeneration(user_recs_interactions: Dataset[Row], sparkSession: SparkSession): Unit = {
-    println("Generatinng recommendations for test users.")
-    experiment_years.foreach(year => {
-      println("year " + year.toString)
-      val hyperparameters = CF_selected_hyperparms.CF_selected_hyperparms.getOrElse(year, Map()).asInstanceOf[Map[String, Any]]
-      val train_user_ids = sparkSession.read
-        .option("header", "true")
-        .csv(out_dir + "holdout/year_" + year.toString + "_train.csv")
-
-      val test_user_ids = sparkSession.read
-        .option("header", "true")
-        .csv(out_dir + "holdout/year_" + year.toString + "_test.csv")
-
-      val train_interactions = CF_utils.preprocessEdges(user_recs_interactions, train_user_ids, year, rating_lower_threshold)
-      Array(1,2,3).foreach(set => {
-        println("set " + set.toString)
-
-        val test_train_interaction_keys = sparkSession.read
-          .option("header", "true")
-          .csv(out_dir + "holdout/year_" + year.toString + "_test_train_interactions_set_" + set.toString + ".csv")
-
-      val test_train_interactions = CF_utils.preprocessEdges(
-          user_recs_interactions.join(test_train_interaction_keys, Seq("_key"), "inner"),
-          test_user_ids, year, rating_lower_threshold)
-        val model = CF_utils.getCFModel(train_interactions.union(test_train_interactions),
-          hyperparameters.getOrElse("latentFactors", -1).asInstanceOf[Int],
-          hyperparameters.getOrElse("maxItr", -1).asInstanceOf[Int],
-          hyperparameters.getOrElse("regularizingParam", -1.0).asInstanceOf[Double],
-          hyperparameters.getOrElse("alpha", -1.0).asInstanceOf[Double])
-
-        // Get recommendations :)
-        val raw_recommendations = CF_utils.getRecommendations(model, test_user_ids, items_to_recommend)
-        val recommendations = CF_utils.postprocessRecommendations(raw_recommendations)
-
-        recommendations
-          .coalesce(1)
-          .write
-          .mode(SaveMode.Overwrite)
-          .option("header", "true")
-          .csv(out_dir + "output/year_" + year.toString + "_CF_user-rec_set_" + set.toString + ".csv")
-      })
-    })
-
   }
 
   def hyperparameterTuning(user_recs_interactions: Dataset[Row], sparkSession: SparkSession): Unit = {
@@ -110,40 +63,25 @@ object CollaborativeFiltering_UserRecord {
         .addDistr("regularizingParam", Uniform(0.001, 2))
         .addDistr("alpha", Uniform(0.1, 3))
         .getSamples()
-
-      // TODO Create df with hyper params
-
-      // TODO create udf to find mean_RMSE error and add to df
-
-
-      // TODO save df csv with hyperparams and mesn RMSE
-
       var year_hyperparameter_with_error_array = collection.mutable.ArrayBuffer[Json]()
 
       randGrid.foreach(hyperparameters => {
+        val train_user_ids = sparkSession.read
+          .orc(out_dir + s"holdout/users/year-${year}-train.orc")
 
-        val hyperparameter_rmses = ArrayBuffer[Double](5)
-        //  for each fold
-        (1 to 5).foreach(fold_num => {
-          val train_user_ids = sparkSession.read
-            .option("header", "true")
-            .csv(out_dir + "crossval/year_" + year.toString + "_cv_fold_" + fold_num.toString + "_train.csv")
+        val train_interactions = CF_utils.preprocessEdges(user_recs_interactions, train_user_ids, year, rating_lower_threshold)
+        val Array(rand_train, rand_validation) = train_interactions.randomSplit(Array(0.7, 0.3), 4242)
 
-          val train_interactions = CF_utils.preprocessEdges(user_recs_interactions, train_user_ids, year, rating_lower_threshold)
-          val Array(rand_train, rand_validation) = train_interactions.randomSplit(Array(0.7, 0.3), 4242)
+        //  Get predictions
+        // using getOrElse("param", -1) because need to use match instead, will give error if -1 is selected... workaround :)
+        val model = CF_utils.getCFModel(rand_train,
+          hyperparameters.getOrElse("latentFactors", -1).asInstanceOf[Int],
+          hyperparameters.getOrElse("maxItr", -1).asInstanceOf[Int],
+          hyperparameters.getOrElse("regularizingParam", -1.0).asInstanceOf[Double],
+          hyperparameters.getOrElse("alpha", -1.0).asInstanceOf[Double])
 
-          //  Get predictions
-          // using getOrElse("param", -1) because need to use match instead, will give error if -1 is selected... workaround :)
-          val model = CF_utils.getCFModel(rand_train,
-            hyperparameters.getOrElse("latentFactors", -1).asInstanceOf[Int],
-            hyperparameters.getOrElse("maxItr", -1).asInstanceOf[Int],
-            hyperparameters.getOrElse("regularizingParam", -1.0).asInstanceOf[Double],
-            hyperparameters.getOrElse("alpha", -1.0).asInstanceOf[Double])
-
-          val predictions = model.transform(rand_validation)
-          hyperparameter_rmses += CF_utils.getRMSE(predictions)
-        })
-        val mean_rmse = hyperparameter_rmses.sum / hyperparameter_rmses.size
+        val predictions = model.transform(rand_validation)
+        val rmse = CF_utils.getRMSE(predictions)
 
         //        package hyperparameters with error as json
         val json = JsonObject()
@@ -151,14 +89,75 @@ object CollaborativeFiltering_UserRecord {
           .add("maxItr", hyperparameters.getOrElse("maxItr", -1).asInstanceOf[Int].asJson)
           .add("regularizingParam", hyperparameters.getOrElse("regularizingParam", -1.0).asInstanceOf[Double].asJson)
           .add("alpha", hyperparameters.getOrElse("alpha", -1.0).asInstanceOf[Double].asJson)
-          .add("error", mean_rmse.asJson)
+          .add("error", rmse.asJson)
 
         year_hyperparameter_with_error_array += json.asJson
+        val bw = new BufferedWriter(
+          new FileWriter(
+            new File(out_dir.substring(9) + s"hyperparameter-tuning/CF-user_rec-year_${year}.json")
+          )
+        )
+        bw.write(year_hyperparameter_with_error_array.toArray.asJson.spaces2SortKeys)
+        bw.close()
       })
 
-      val bw = new BufferedWriter(new FileWriter(new File(out_dir.substring(9) + "hyperparameter-tuning/CollabFiltering_user-rec_year_" + year.toString + ".json")))
-      bw.write(year_hyperparameter_with_error_array.toArray.asJson.spaces2SortKeys)
-      bw.close()
+    })
+  }
+
+  def testRecommendationsGeneration(user_recs_interactions: Dataset[Row], sparkSession: SparkSession): Unit = {
+    println("Generatinng recommendations for test users.")
+    experiment_years.foreach(year => {
+      println("year " + year.toString)
+      val hyperparameters = CF_selected_hyperparms.CF_selected_hyperparms.getOrElse(year, Map()).asInstanceOf[Map[String, Any]]
+      val train_user_ids = sparkSession.read
+        .orc(out_dir + s"holdout/users/year-${year}-train.orc")
+
+      val train_interactions = CF_utils.preprocessEdges(user_recs_interactions, train_user_ids, year, rating_lower_threshold)
+
+      testRecommendationsForOneYear("RS", year,
+        user_recs_interactions, train_interactions,
+        hyperparameters, sparkSession)
+
+      testRecommendationsForOneYear("EA", year,
+        user_recs_interactions, train_interactions,
+        hyperparameters, sparkSession)
+    })
+
+  }
+
+  def testRecommendationsForOneYear(RS_or_EA: String,
+                                    year: Int,
+                                    user_recs_interactions: DataFrame,
+                                    train_interactions: DataFrame,
+                                    hyperparameters: Map[String, Any],
+                                    sparkSession: SparkSession): Unit = {
+
+    val test_user_ids = sparkSession.read
+      .orc(out_dir + s"holdout/users/year-${year}-test_${RS_or_EA}.orc")
+    Array(1, 2, 3).foreach(set => {
+      println("set " + set.toString)
+
+      val test_train_interaction_keys = sparkSession.read
+        .orc(out_dir + s"holdout/interactions/year_${year}-test_RS-train_interactions-set_${set}.orc")
+
+      val test_train_interactions = CF_utils.preprocessEdges(
+        user_recs_interactions.join(test_train_interaction_keys, Seq("_key"), "inner"),
+        test_user_ids, year, rating_lower_threshold)
+
+      val model = CF_utils.getCFModel(train_interactions.union(test_train_interactions),
+        hyperparameters.getOrElse("latentFactors", -1).asInstanceOf[Int],
+        hyperparameters.getOrElse("maxItr", -1).asInstanceOf[Int],
+        hyperparameters.getOrElse("regularizingParam", -1.0).asInstanceOf[Double],
+        hyperparameters.getOrElse("alpha", -1.0).asInstanceOf[Double])
+
+      // Get recommendations :)
+      val raw_recommendations = CF_utils.getRecommendations(model, test_user_ids, items_to_recommend)
+      val recommendations = CF_utils.postprocessRecommendations(raw_recommendations)
+
+      recommendations
+        .write
+        .mode(SaveMode.Overwrite)
+        .orc(out_dir + s"output-${RS_or_EA}/CF-user_rec/year-${year}_CF-user_rec-set_${set}.orc")
     })
   }
 }

@@ -1,7 +1,7 @@
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.sql.expressions.Window
 import org.apache.spark.sql.functions.{rand, row_number}
-import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
+import org.apache.spark.sql.{DataFrame, Dataset, Row, SaveMode, SparkSession}
 import utils.{CF_selected_hyperparms, CollabFilteringUtils}
 
 object CollaborativeFiltering_UserArtist {
@@ -66,58 +66,73 @@ object CollaborativeFiltering_UserArtist {
       println("year " + year.toString)
       val hyperparameters = CF_selected_hyperparms.CF_selected_hyperparms.getOrElse(year, Map()).asInstanceOf[Map[String, Any]]
       val train_user_ids = sparkSession.read
-        .option("header", "true")
-        .csv(out_dir + "holdout/year_" + year.toString + "_train.csv")
-
-      val test_user_ids = sparkSession.read
-        .option("header", "true")
-        .csv(out_dir + "holdout/year_" + year.toString + "_test.csv")
+        .orc(out_dir + s"holdout/users/year-${year}-train.orc")
 
       val train_interactions = CF_utils.preprocessEdges(
         user_artist_interactions, train_user_ids, year, rating_lower_threshold)
-      Array(1, 2, 3).foreach(set => {
-        println("set " + set.toString)
 
-        val test_train_user_rec_interaction_keys = sparkSession.read
-          .option("header", "true")
-          .csv(out_dir + "holdout/year_" + year.toString + "_test_train_interactions_set_" + set.toString + ".csv")
+      testRecommendationsForOneYear("RS", year,
+        user_rec_interactions, user_artist_interactions, artist_rec_interactions,
+        train_interactions,
+        hyperparameters, sparkSession)
 
-        // TODO filter user-artist interactions which are indicated by user-item interactions.
-        //  use artist-recording edges for the same.
+      testRecommendationsForOneYear("EA", year,
+        user_rec_interactions, user_artist_interactions, artist_rec_interactions,
+        train_interactions,
+        hyperparameters, sparkSession)
 
-        // Finding user-artist edges implied by user-rec edges in the test_train set
-        val test_train_user_artist_ids = user_rec_interactions
-          .select("user_id", "rec_id", "_key")
-          .join(test_train_user_rec_interaction_keys, Seq("_key"), "inner")
-          .select("user_id", "rec_id")
-          .join(artist_rec_interactions.select("artist_id", "rec_id"), Seq("rec_id"), "inner")
-          .select("user_id", "artist_id")
-
-        val test_train_interactions = CF_utils.preprocessEdges(
-          user_artist_interactions.join(
-            test_train_user_artist_ids,
-            Seq("user_id", "artist_id"), "inner"),
-          test_user_ids, year, rating_lower_threshold)
-
-        val model = CF_utils.getCFModel(train_interactions.union(test_train_interactions),
-          hyperparameters.getOrElse("latentFactors", -1).asInstanceOf[Int],
-          hyperparameters.getOrElse("maxItr", -1).asInstanceOf[Int],
-          hyperparameters.getOrElse("regularizingParam", -1.0).asInstanceOf[Double],
-          hyperparameters.getOrElse("alpha", -1.0).asInstanceOf[Double])
-
-        // Get recommendations :)
-        val raw_recommendations = CF_utils.getRecommendations(model, test_user_ids, items_to_recommend)
-        val recommendations = CF_utils.postprocessRecommendations(raw_recommendations)
-
-        postprocessExpansionArtistToRecordings(recommendations, artist_rec_interactions, user_rec_interactions, year)
-          .coalesce(1)
-          .write
-          .mode(SaveMode.Overwrite)
-          .option("header", "true")
-          .csv(out_dir + "output/year_" + year.toString + "_CF_user-artist_set_" + set.toString + ".csv")
-      })
     })
 
+  }
+
+  def testRecommendationsForOneYear(RS_or_EA: String,
+                                    year: Int,
+                                    user_rec_interactions: DataFrame,
+                                    user_artist_interactions: DataFrame,
+                                    artist_rec_interactions: DataFrame,
+                                    train_interactions: DataFrame,
+                                    hyperparameters: Map[String, Any],
+                                    sparkSession: SparkSession): Unit = {
+
+    val test_user_ids = sparkSession.read
+      .orc(out_dir + s"holdout/users/year-${year}-test_${RS_or_EA}.orc")
+    Array(1, 2, 3).foreach(set => {
+      println("set " + set.toString)
+
+      val test_train_user_rec_interaction_keys = sparkSession.read
+        .orc(out_dir + s"holdout/interactions/year_${year}-test_RS-train_interactions-set_${set}.orc")
+
+
+      //  filter user-artist interactions which are indicated by user-item interactions.
+      //  use artist-recording edges for the same.
+      val test_train_user_artist_ids = user_rec_interactions
+        .select("user_id", "rec_id", "_key")
+        .join(test_train_user_rec_interaction_keys, Seq("_key"), "inner")
+        .select("user_id", "rec_id")
+        .join(artist_rec_interactions.select("artist_id", "rec_id"), Seq("rec_id"), "inner")
+        .select("user_id", "artist_id")
+
+      val test_train_interactions = CF_utils.preprocessEdges(
+        user_artist_interactions.join(
+          test_train_user_artist_ids,
+          Seq("user_id", "artist_id"), "inner"),
+        test_user_ids, year, rating_lower_threshold)
+
+      val model = CF_utils.getCFModel(train_interactions.union(test_train_interactions),
+        hyperparameters.getOrElse("latentFactors", -1).asInstanceOf[Int],
+        hyperparameters.getOrElse("maxItr", -1).asInstanceOf[Int],
+        hyperparameters.getOrElse("regularizingParam", -1.0).asInstanceOf[Double],
+        hyperparameters.getOrElse("alpha", -1.0).asInstanceOf[Double])
+
+      // Get recommendations :)
+      val raw_recommendations = CF_utils.getRecommendations(model, test_user_ids, items_to_recommend)
+      val recommendations = CF_utils.postprocessRecommendations(raw_recommendations)
+
+      postprocessExpansionArtistToRecordings(recommendations, artist_rec_interactions, user_rec_interactions, year)
+        .write
+        .mode(SaveMode.Overwrite)
+        .orc(out_dir + s"output-${RS_or_EA}/CF-user_artist/year-${year}_CF-user_artist-set_${set}.orc")
+    })
   }
 
   def postprocessExpansionArtistToRecordings(recommendations: Dataset[Row],
