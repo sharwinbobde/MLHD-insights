@@ -97,7 +97,7 @@ if __name__ == '__main__':
         for b in range(16):
             subdir = hex(a)[2:] + hex(b)[2:]
             print(subdir)
-            folder = config.ABZ_orc_location + subdir + '/'
+            folder = config.ABz_orc_location + subdir + '/'
             if a == 0 and b == 0:
                 df_ = spark.read.orc(folder).drop("metadata")
                 df_ = flatten_df_structs(df_)
