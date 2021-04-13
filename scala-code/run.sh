@@ -1,3 +1,4 @@
+
 #--------- Spark Configuration START --------------------------
 
 num_executors=1
@@ -9,33 +10,40 @@ outdir='file:/io/data/processed/'
 #--------- Spark Configuration END ----------------------------
 
 
+if [ $# -eq 0 ]
+  then
+    # No arguments supplied
+    HEIGHT=15
+    WIDTH=40
+    CHOICE_HEIGHT=4
+    BACKTITLE="Backtitle here"
+    TITLE="Title here"
+    MENU="Choose one of the following options:"
 
-HEIGHT=15
-WIDTH=40
-CHOICE_HEIGHT=4
-BACKTITLE="Backtitle here"
-TITLE="Title here"
-MENU="Choose one of the following options:"
+    OPTIONS=(
+             1 "add IDs for Nodes"
+             2 "MLHD Analysis"
+             3 "Stats for Graph Properties"
+             4 "Divide Dataset for Experiments"
+             5 "User-Record Collaborative Filtering"
+             6 "User-Artist Collaborative Filtering"
+             7 "LSH Collision Analysis"
+             8 "ABz Nearest-Neighbour Recommenders"
+             9 "TestAzureStorage"
+             )
 
-OPTIONS=(
-         1 "add IDs for Nodes"
-         2 "MLHD Analysis"
-         3 "Stats for Graph Properties"
-         4 "Divide Dataset for Experiments"
-         5 "User-Record Collaborative Filtering"
-         6 "User-Artist Collaborative Filtering"
-         7 "LSH Collision Analysis"
-         8 "ABz Nearest-Neighbour Recommenders"
-         9 "TestAzureStorage"
-         )
+    CHOICE=$(dialog --clear \
+                    --backtitle "$BACKTITLE" \
+                    --title "$TITLE" \
+                    --menu "$MENU" \
+                    $HEIGHT $WIDTH $CHOICE_HEIGHT \
+                    "${OPTIONS[@]}" \
+                    2>&1 >/dev/tty)
+  else
+    # Option code is provided
+    CHOICE=$1
+fi
 
-CHOICE=$(dialog --clear \
-                --backtitle "$BACKTITLE" \
-                --title "$TITLE" \
-                --menu "$MENU" \
-                $HEIGHT $WIDTH $CHOICE_HEIGHT \
-                "${OPTIONS[@]}" \
-                2>&1 >/dev/tty)
 
 clear
 case $CHOICE in
@@ -64,7 +72,7 @@ case $CHOICE in
             mainClass=ABzRecommenders
             ;;
         9)
-            mainClass=TestAzureStorage
+            mainClass=Test
             ;;
         *)
             echo "Option did not match"
