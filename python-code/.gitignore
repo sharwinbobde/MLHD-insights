@@ -18,6 +18,7 @@ out_data*
 ML1-insights-venv/*
 venv/*
 images/*.html
+*checkpoint.ipynb
 
 # vscode env
 .vscode/*
