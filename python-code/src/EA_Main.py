@@ -1,20 +1,22 @@
 from jmetal.algorithm.multiobjective.nsgaiii import NSGAIII, UniformReferenceDirectionFactory
+from jmetal.core.quality_indicator import HyperVolume
 from jmetal.lab.visualization import Plot, InteractivePlot
 from jmetal.operator import SBXCrossover, PolynomialMutation
-from jmetal.util.evaluator import SparkEvaluator
+from jmetal.util.evaluator import *
 from jmetal.util.observer import ProgressBarObserver, VisualizerObserver
 from jmetal.util.termination_criterion import StoppingByEvaluations
 
 from config import num_cpu
 from src.utils.RecSysProblem import RecSysProblem
 
-problem = RecSysProblem(models=["CF_user-rec", "CF_user-artist"],
+problem = RecSysProblem(test_set_type="RS",
+                        models=["CF-user_rec", "CF-user_artist"],
                         metrics=['MAR', 'Cov', 'Pers', 'Nov'],
                         year=2008,
                         k=10,
                         K=10)
 population_size = 10
-max_generations = 10
+max_generations = 2
 max_evaluations = population_size * max_generations
 
 algorithm = NSGAIII(
@@ -48,3 +50,6 @@ plot_front = InteractivePlot(title='Pareto front approximation. Problem: ' + pro
 plot_front.plot(front,
                 label='NSGAIII-' + problem.get_name(),
                 filename='../images/' + algorithm.get_name() + "-" + problem.get_name(), )
+
+hv = HyperVolume(reference_point=[1, 1, 1, 1]).compute([front[i].objectives for i in range(len(front))])
+print(f"hypervolume = {hv}")

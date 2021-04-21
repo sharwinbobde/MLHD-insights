@@ -1,12 +1,8 @@
-from glob import glob
 from math import isclose
 
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import pyspark
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col
 
 
 def df_to_dict(df: pd.DataFrame) -> dict:
@@ -24,21 +20,16 @@ class RecommendationUtils:
 
         self.test_set_type = test_set_type
         self.data_stem = data_stem
-        self.spark = SparkSession \
-            .builder \
-            .appName("ABz Preprocessing + LSH") \
-            .config("spark.executor.memory", "2G") \
-            .config("spark.driver.memory", "3G") \
-            .getOrCreate()
 
-    def get_recommendations_dict_single_model(self, year: int, model: str, set_num: int, k: int,
-                                              reranking_weight: float = 1.0) -> dict:
+    @staticmethod
+    def get_recommendations_dict_from_single_df(df: pd.DataFrame, reranking_weight: float = 1.0):
+        df_ = df.copy()
+        df_["rank"] = df_["rank"].apply(lambda x: x * reranking_weight)
+        return df_to_dict(df_)
 
-        df = self.get_recommendations_df(year, model, set_num, k, reranking_weight)
-        return df_to_dict(df)
-
-    def get_recommendations_dict_many_model(self, year: int, models: list[str], set_num: int, k: int, K: int,
-                                            reranking_weights: list[float]) -> dict:
+    @staticmethod
+    def get_recommendations_dict_from_many_df(models: list[str], model_recs_df: dict, set_num: int,
+                                              reranking_weights: list[float], K: int):
         if len(models) != len(reranking_weights):
             raise ValueError("models and reranking_weights must be lists with the same size")
 
@@ -49,7 +40,9 @@ class RecommendationUtils:
 
         list_df = []
         for i in range(len(models)):
-            df = self.get_recommendations_df(year, models[i], set_num, k, reranking_weights[i])
+            df = model_recs_df[(models[i], set_num)]
+            # rerank
+            df["rank"] = df["rank"].apply(lambda x: x * reranking_weights[i])
             list_df.append(df)
 
         # sort by rank
@@ -64,27 +57,41 @@ class RecommendationUtils:
         # find new rank
         df["new_rank"] = df.groupby("user_id")['rank'].rank(method='first')
         df = df.query("new_rank <= " + str(K))
-        # print(df)
         return df_to_dict(df)
 
-    def get_recommendations_df(self, year: int, model: str, set_num: int, k: int,
-                               reranking_weight: float = 1.0) -> pd.DataFrame:
+    def read_recommendations_df(self, year: int, model: str, set_num: int, k: int = -1) -> pd.DataFrame:
+        spark = SparkSession \
+            .builder \
+            .getOrCreate()
         filename = self.data_stem + f"output-{self.test_set_type}/{model}/year_{year}-{model}-set_{set_num}.orc"
-        df = self.spark.read.orc(filename) \
-            .filter(f"rank <= {k}") \
-            .withColumn("rank", col("rank") * reranking_weight)
-        return df.toPandas()
+        if k > 1:
+            out = spark.read.orc(filename) \
+                .filter(f"rank <= {k}") \
+                .toPandas()
+        else:
+            out = spark.read.orc(filename) \
+                .toPandas()
+        spark.stop()
+        return out
 
     def read_ground_truth(self, year: int, set_num: int) -> dict:
+        spark = SparkSession \
+            .builder \
+            .getOrCreate()
         filename = self.data_stem + \
                    f"holdout/interactions/" \
                    f"year_{year}-test_{self.test_set_type}_test-interactions-user_item-set_{set_num}.orc"
-        df = self.spark.read.orc(filename).toPandas()
+        df = spark.read.orc(filename).toPandas()
+
+        spark.stop()
         return df_to_dict(df)
 
     def read_catalog(self, year: int) -> dict:
+        spark = SparkSession \
+            .builder \
+            .getOrCreate()
         filename = self.data_stem + "item_listens_per_year.orc"
-        df = self.spark.read.orc(filename) \
+        df = spark.read.orc(filename) \
             .withColumnRenamed(f"sum_{year}", "count") \
             .filter("count > 0") \
             .toPandas()
@@ -92,6 +99,7 @@ class RecommendationUtils:
         df = df.set_index('rec_id') \
             ["count"]
 
+        spark.stop()
         return df.to_dict()
 
     @staticmethod
