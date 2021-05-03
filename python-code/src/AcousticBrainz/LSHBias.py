@@ -11,7 +11,7 @@ class LSHBias:
     def create_hyperplanes(self):
         # W = (D+1) x K matrix where k^th column is the normal vector for kth hyperplane
         # D+1 because of bias term and considering all features are 0-1 scaled
-        W = np.zeros(shape=(self.feature_dim + 1, self.bits), dtype=np.float)
+        W = np.zeros(shape=(self.feature_dim + 1, self.bits), dtype=np.float32)
         # weights
         W[0:self.feature_dim, :] = np.random.uniform(-1, 1, size=(self.feature_dim, self.bits))
         # bias terms
@@ -27,7 +27,10 @@ class LSHBias:
 
         # convert to 0,1 instead of +1,-1
         def func(x):
-            return int((x+1)/2)
+            if x >= 0:
+                return 1
+            else:
+                return 0
 
         _01 = np.vectorize(func)(signs)
         return _01
@@ -41,14 +44,18 @@ class LSHBias:
         mul = np.matmul(self.W.transpose(), X.transpose()).transpose()
         signs = np.sign(mul)
 
-        # convert to 0,1 instead of +1,-1
+        # convert to 0,1 instead of +1,-1,0
         def func(x):
-            return int((x+1)/2)
+            if x >= 0:
+                return 1
+            else:
+                return 0
 
         _01 = np.vectorize(func)(signs)
         return _01[0]
 
-    def hash_to_categories(self, _01):
+    @staticmethod
+    def hash_to_categories(_01):
         out = []
         for hashed_value in _01:
             out.append([''.join(str(e) for e in hashed_value)])

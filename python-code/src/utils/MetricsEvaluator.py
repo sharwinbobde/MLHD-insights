@@ -10,15 +10,24 @@ from pyspark.sql import SparkSession
 
 data_stem = "../../scala-code/data/processed/"
 
+valid_models = ["CF-user_rec", "CF-user_artist", "Pop"]
+
 
 class MetricsEvaluator:
 
-    def __init__(self, year: int, k: int):
-        self.models = ["CF-user_rec", "CF-user_artist"]
-        self.year = year
-        print('initializing Metrics utilities for year ' + str(year) + '...')
+    def __init__(self, models, year: int, k: int, archive_size: int = None, RS_or_EA: str = "RS"):
+        for model in models:
+            if model not in valid_models:
+                raise ValueError(f"value for test_set_type should be in {valid_models}")
 
-        self.rec_utils = RecommendationUtils(data_stem, "RS")
+        self.models = models
+        self.year = year
+        print(f'Initializing MetricsEvaluator for year:{year} and k:{k}')
+        if archive_size is None:
+            self.rec_utils = RecommendationUtils(data_stem, RS_or_EA=RS_or_EA)
+        else:
+            self.rec_utils = RecommendationUtils(f"{data_stem}archived-{archive_size}-parts/", RS_or_EA=RS_or_EA)
+
         self.k = k
         self.catalogues = dict()
         self.truths = dict()
@@ -34,8 +43,11 @@ class MetricsEvaluator:
                                              model=model,
                                              set_num=set_no,
                                              k=k)
+                # print((model, set_no))
+                # print(self.recommendation_dfs[(model, set_no)].shape)
 
         self.novelty_threshold = self.rec_utils.get_novelty_threshold(self.catalog)
+        print(f'Completed initialization')
 
     # ========================== Metrics ======================
 
@@ -114,6 +126,10 @@ class MetricsEvaluator:
         catalog = list(self.catalog.keys())
         return recmetrics.prediction_coverage(arr, catalog) / 100.0
 
+    def modified_diversity(self, recs: dict):
+        arr = list(recs.values())
+        df = pd.DataFrame(np.array(arr))
+
     def familiarity(self, recs):
         # TODO
         return -1
@@ -129,16 +145,44 @@ class MetricsEvaluator:
         m['Fam'] = self.familiarity(recs)
         return m
 
+    def get_metrics(self, metrics: list[str], recs: dict, set_num: int, K: int) -> dict:
+        m = dict()
+        for met in metrics:
+            if met == 'MAR':
+                m['MAR'] = self.mark(recs, set_num, K)
+
+            if met == 'MAR_filtered':
+                m['MAR_filtered'] = self.mark_filter_valid(recs, set_num, K)
+
+            if met == 'NaN_Prop':
+                m['NaN_Prop'], _, _ = self.NaN_Proportion(recs, set_num)
+
+            if met == 'Pers':
+                m['Pers'] = self.personalization(recs)
+
+            if met == 'Nov':
+                m['Nov'] = self.novelty(recs, K)
+
+            if met == 'Cov':
+                m['Cov'] = self.coverage(recs)
+
+            if met == 'Fam':
+                m['Fam'] = self.familiarity(recs)
+        return m
+
 
 if __name__ == '__main__':
-    k_ = 20
+    k_ = 10
     set_ = 1
     metrics_evaluators = {}
+    models_ = ["CF-user_rec", "CF-user_artist"]
+    archive_parts_test = 100
     for yr in experiment_years:
-        metrics_evaluators[yr] = MetricsEvaluator(yr, k_)
+        metrics_evaluators[yr] = MetricsEvaluator(models=models_, year=yr, k=k_, archive_size=archive_parts_test)
     # TODO filter users to have some specified number of items
+
     print("Test for single recommenders")
-    for model_ in ["CF-user_rec", "CF-user_artist"]:
+    for model_ in models_:
         print("\nmodel = " + model_)
         for yr in experiment_years:
             print(f"year: {yr}")
@@ -149,12 +193,12 @@ if __name__ == '__main__':
 
     print("\nTest for multiple recommenders")
     models = ["CF-user_rec", "CF-user_artist"]
-    weights = [0.05, 0.95]
+    weights = [0.4, 0.6 ]
     K_ = k_
     for yr in experiment_years:
         print(f"year: {yr}")
         recs_ = RecommendationUtils \
-            .get_recommendations_dict_from_many_df(models=models,
+            .get_recommendations_dict_from_many_df(models=models_,
                                                    model_recs_df=metrics_evaluators[yr].recommendation_dfs,
                                                    set_num=set_,
                                                    reranking_weights=weights,

@@ -11,9 +11,10 @@ from pyspark.sql.session import SparkSession
 from pyspark.sql.types import *
 import pyspark.sql.functions as F
 import re
+from datetime import datetime
 
-import config
 from src.AcousticBrainz.LSHBias import LSHBias
+import config
 
 LSH_NUM_BITS = int(2 ** 13)
 
@@ -37,8 +38,8 @@ def hash_features_matching_regex(df, feature_name):
     hash_column_name = str(feature_name) + "_hash_" + str(LSH_NUM_BITS) + "_bits"
     df = df \
         .withColumn(
-            hash_column_name,
-            hash_feature_vector_to_array_of_ints(col("FeatureVector_" + feature_name), lit(feature_name))) \
+        hash_column_name,
+        hash_feature_vector_to_array_of_ints(col("FeatureVector_" + feature_name), lit(feature_name))) \
         .drop("FeatureVector_" + feature_name)
     return df, hash_column_name
 
@@ -57,6 +58,12 @@ def hash_feature_vector_to_array_of_ints(v, feature_name):
     return out
 
 
+def time_diff(start, end):
+    difference = end - start
+    seconds_in_day = 24 * 60 * 60
+    return divmod(difference.days * seconds_in_day + difference.seconds, 60)
+
+
 if __name__ == '__main__':
     # driver_memory = '3g'
     # pyspark_submit_args = ' --driver-memory ' + driver_memory + ' pyspark-shell'
@@ -65,22 +72,29 @@ if __name__ == '__main__':
     spark = SparkSession \
         .builder \
         .appName("ABz Preprocessing + LSH") \
-        .config("spark.executor.memory", "5G") \
-        .config("spark.driver.memory", "10G") \
+        .config("spark.executor.cores", "12") \
+        .config("spark.executor.instances", "1") \
+        .config("spark.executor.memory", "8G") \
+        .config("spark.driver.memory", "8G") \
+        .config("spark.executor.memoryOverhead", "3000") \
+        .config("spark.local.dir", "/run/media/sharwinbobde/FCA21FCDA21F8B72/tmp/") \
         .getOrCreate()
 
     sc = spark.sparkContext
 
-    df_cleaned = spark.read.orc(config.ABz_cleaned_orc).limit(10)
-    df_cleaned.printSchema()
+    start = datetime.now()
+    print(f"Reading: {start}")
+
+    df_cleaned = spark.read.orc(config.ABz_cleaned_orc).limit(10000)
+    # df_cleaned.printSchema()
 
     LSH_per_feature_set = {}
     feature_columns_dict = {}
     params = [
-        (r"rhythm.*", "rhythm"),
-        #           (r"tonal.*", "tonal"),
-        #           (r"lowlevel.*", "lowlevel"),
-        #           (r".*", "all_features"),
+        # (r"rhythm.*", "rhythm"),
+        # (r"tonal.*", "tonal"),
+        # (r"lowlevel.*", "lowlevel"),
+        (r".*", "all_features"),
     ]
     for p in params:
         r = re.compile(p[0])
@@ -91,31 +105,41 @@ if __name__ == '__main__':
         LSH = LSHBias(feature_dim=len(feature_columns), bits=LSH_NUM_BITS)
         LSH_per_feature_set[p[1]] = LSH
         feature_columns_dict[p[1]] = feature_columns
-    params
 
     df_preprocessed = df_cleaned
 
+    print("Assembling and Scaling")
+    print(datetime.now())
+    
     refined_cols = ["rec_MBID"]
-
     for p in params:
         df_preprocessed, c = assemble(df_preprocessed, p[1])
         refined_cols.append(c)
 
     df_preprocessed = df_preprocessed.select(*refined_cols)
-
     for p in params:
         df_preprocessed = scale(df_preprocessed, p[1])
 
     cols = ['rec_MBID'] + ['FeatureVector_' + p[1] for p in params]
     df_trimmed = df_preprocessed.select(*cols).persist(StorageLevel.DISK_ONLY)
 
+    end = datetime.now()
+    print(end)
+    print(f"time difference = {time_diff(start, end)}")
+
     refined_cols = ["rec_MBID"]
     df_with_hashes = df_trimmed
 
+    print("Hashing...")
     for p in params:
+        start = datetime.now()
+        print(f"Starting {p[1]}: {start}")
         _, c = hash_features_matching_regex(df_with_hashes, feature_name=p[1])
-
         _.select("rec_MBID", c) \
             .write \
             .mode(saveMode='overwrite') \
-            .orc(config.out_dir + "2M-hashes.orc")
+            .orc(f"{config.out_dir}2M-hashes-{p[1]}.orc")
+
+        end = datetime.now()
+        print(f"Finished {p[1]}: {end}")
+        print(f"time difference = {time_diff(start, end)}")

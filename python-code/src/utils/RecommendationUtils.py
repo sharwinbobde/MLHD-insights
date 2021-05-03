@@ -1,3 +1,4 @@
+from glob import glob
 from math import isclose
 
 import pandas as pd
@@ -14,11 +15,11 @@ def df_to_dict(df: pd.DataFrame) -> dict:
 
 class RecommendationUtils:
 
-    def __init__(self, data_stem: str, test_set_type: str):
-        if test_set_type not in ["RS", "EA"]:
+    def __init__(self, data_stem: str, RS_or_EA: str):
+        if RS_or_EA not in ["RS", "EA"]:
             raise ValueError("value for test_set_type fhould be either \"RS\" or \"EA\"")
 
-        self.test_set_type = test_set_type
+        self.RS_or_EA = RS_or_EA
         self.data_stem = data_stem
 
     @staticmethod
@@ -60,47 +61,63 @@ class RecommendationUtils:
         return df_to_dict(df)
 
     def read_recommendations_df(self, year: int, model: str, set_num: int, k: int = -1) -> pd.DataFrame:
-        spark = SparkSession \
-            .builder \
-            .getOrCreate()
-        filename = self.data_stem + f"output-{self.test_set_type}/{model}/year_{year}-{model}-set_{set_num}.orc"
-        if k > 1:
-            out = spark.read.orc(filename) \
-                .filter(f"rank <= {k}") \
-                .toPandas()
-        else:
-            out = spark.read.orc(filename) \
-                .toPandas()
-        spark.stop()
-        return out
+        # spark = SparkSession \
+        #     .builder \
+        #     .getOrCreate()
+        # filename = self.data_stem + f"output-{self.RS_or_EA}/{model}/year_{year}-{model}-set_{set_num}.orc"
+        # if k > 1:
+        #     out = spark.read.orc(filename) \
+        #         .filter(f"rank <= {k}") \
+        #         .toPandas()
+        # else:
+        #     out = spark.read.orc(filename) \
+        #         .toPandas()
+        # spark.stop()
+        # return out
+        filename = self.data_stem + f"output-{self.RS_or_EA}/{model}/year_{year}-{model}-set_{set_num}.parquet"
+        for f in glob(filename + "/part-*.parquet"):
+            df = pd.read_parquet(f)
+            if k > 1:
+                df = df.query(f"rank <= {k}")
+        return df
 
     def read_ground_truth(self, year: int, set_num: int) -> dict:
-        spark = SparkSession \
-            .builder \
-            .getOrCreate()
+        # spark = SparkSession \
+        #     .builder \
+        #     .getOrCreate()
         filename = self.data_stem + \
                    f"holdout/interactions/" \
-                   f"year_{year}-test_{self.test_set_type}_test-interactions-user_item-set_{set_num}.orc"
-        df = spark.read.orc(filename).toPandas()
-
-        spark.stop()
+                   f"year_{year}-test_{self.RS_or_EA}_test-interactions-user_item-set_{set_num}.parquet"
+        # df = spark.read.orc(filename).toPandas()
+        #
+        # spark.stop()
+        # return df_to_dict(df)
+        for f in glob(filename + "/part-*.parquet"):
+            df = pd.read_parquet(f)
         return df_to_dict(df)
 
     def read_catalog(self, year: int) -> dict:
-        spark = SparkSession \
-            .builder \
-            .getOrCreate()
-        filename = self.data_stem + "item_listens_per_year.orc"
-        df = spark.read.orc(filename) \
-            .withColumnRenamed(f"sum_{year}", "count") \
-            .filter("count > 0") \
-            .toPandas()
+        # spark = SparkSession \
+        #     .builder \
+        #     .getOrCreate()
+        filename = self.data_stem + "item_listens_per_year.parquet"
+        # df = spark.read.orc(filename) \
+        #     .withColumnRenamed(f"sum_{year}", "count") \
+        #     .filter("count > 0") \
+        #     .toPandas()
+        #
+        # df = df.set_index('rec_id') \
+        #     ["count"]
+        #
+        # spark.stop()
+        # return df.to_dict()
+        for f in glob(filename + "/part-*.parquet"):
+            df = pd.read_parquet(f).rename(columns={f"sum_{year}": "count"})\
+            .query("count > 0") \
+            .set_index('rec_id')["count"]
 
-        df = df.set_index('rec_id') \
-            ["count"]
-
-        spark.stop()
         return df.to_dict()
+
 
     @staticmethod
     def get_novelty_threshold(catalog: dict) -> (list[int], list[int], int):
