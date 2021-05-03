@@ -9,6 +9,7 @@ object CollaborativeFiltering_UserArtist {
   val ratingCol = "rating"
   val items_to_recommend = 100
   val experiment_years: Array[Int] = Array(2005, 2008, 2012)
+//  val experiment_years: Array[Int] = Array(2012)
   val sample_items_per_artist = 10
 
   val rating_lower_threshold = 25
@@ -32,6 +33,8 @@ object CollaborativeFiltering_UserArtist {
         .config("arangodb.hosts", "plb.sharwinbobde.com:8529") // system ip as docker ip won't be loopback
         .config("arangodb.user", "root")
         .config("arangodb.password", "Happy2Help!")
+        .config("spark.driver.memoryOverhead", "10000")
+        .config("spark.executor.memoryOverhead", "10000")
         .appName("CollabFiltering User-Artist")
         .getOrCreate()
 
@@ -44,7 +47,7 @@ object CollaborativeFiltering_UserArtist {
 
 
     // CrossValidation for hyperparameter tuning
-    //    hyperparameterTuning(user_recs_interactions, users, recs, spark)
+    //    hyperparameterTuning(user_rec_interactions, users, recs, spark)
 
     testRecommendationsGeneration(
       user_artist_interactions,
@@ -61,9 +64,9 @@ object CollaborativeFiltering_UserArtist {
                                     user_rec_interactions: Dataset[Row],
                                     artist_rec_interactions: Dataset[Row],
                                     sparkSession: SparkSession): Unit = {
-    println("Generatinng recommendations for test users.")
+    println("Generating recommendations for test users.")
     experiment_years.foreach(year => {
-      println("year " + year.toString)
+      println(s"year $year")
       val hyperparameters = CF_selected_hyperparms.CF_selected_hyperparms.getOrElse(year, Map()).asInstanceOf[Map[String, Any]]
       val train_user_ids = sparkSession.read
         .orc(out_dir + s"holdout/users/year-${year}-train.orc")
@@ -97,10 +100,10 @@ object CollaborativeFiltering_UserArtist {
     val test_user_ids = sparkSession.read
       .orc(out_dir + s"holdout/users/year-${year}-test_${RS_or_EA}.orc")
     Array(1, 2, 3).foreach(set => {
-      println("set " + set.toString)
+      println(s"set $set")
 
       val test_train_user_rec_interaction_keys = sparkSession.read
-        .orc(out_dir + s"holdout/interactions/year_${year}-test_RS-train_interactions-set_${set}.orc")
+        .orc(out_dir + s"holdout/interactions/year_${year}-test_${RS_or_EA}-train_interactions-set_${set}.orc")
 
 
       //  filter user-artist interactions which are indicated by user-item interactions.
@@ -122,13 +125,15 @@ object CollaborativeFiltering_UserArtist {
         hyperparameters.getOrElse("latentFactors", -1).asInstanceOf[Int],
         hyperparameters.getOrElse("maxItr", -1).asInstanceOf[Int],
         hyperparameters.getOrElse("regularizingParam", -1.0).asInstanceOf[Double],
-        hyperparameters.getOrElse("alpha", -1.0).asInstanceOf[Double])
+        hyperparameters.getOrElse("alpha", -1.0).asInstanceOf[Double],
+        num_blocks =hyperparameters.getOrElse("num_blocks", 10).asInstanceOf[Int])
 
       // Get recommendations :)
       val raw_recommendations = CF_utils.getRecommendations(model, test_user_ids, items_to_recommend)
       val recommendations = CF_utils.postprocessRecommendations(raw_recommendations)
 
       postprocessExpansionArtistToRecordings(recommendations, artist_rec_interactions, user_rec_interactions, year)
+        .coalesce(1)
         .write
         .mode(SaveMode.Overwrite)
         .orc(out_dir + s"output-${RS_or_EA}/CF-user_artist/year_${year}-CF-user_artist-set_${set}.orc")

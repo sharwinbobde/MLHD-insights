@@ -12,7 +12,7 @@ import java.io.{BufferedWriter, File, FileWriter}
 
 object MLHD_Analysis {
   val experiment_years: Array[Int] = (2005 to 2012).toArray
-  val visualization_years: Array[Int] = (2005 to 2013).toArray
+  val visualization_years: Array[Int] = (2005 to 2012).toArray
   var out_dir = ""
 
   def main(args: Array[String]) {
@@ -52,7 +52,6 @@ object MLHD_Analysis {
         sum("yr_2011"),
         sum("yr_2012"),
         sum("yr_2013"),
-        sum("yr_2014"),
       )
 
     user_listens_per_year

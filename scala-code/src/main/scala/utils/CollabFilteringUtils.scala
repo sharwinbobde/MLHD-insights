@@ -9,10 +9,11 @@ import org.apache.spark.storage.StorageLevel
 class CollabFilteringUtils(val user_colname: String, val item_colname: String, val rating_colname: String) {
 
 
-  def getCFModel(train: Dataset[Row], latentFactors: Int, maxItr: Int, regularizingParam: Double, alpha: Double): ALSModel = {
+  def getCFModel(train: Dataset[Row], latentFactors: Int, maxItr: Int, regularizingParam: Double, alpha: Double, num_blocks:Int): ALSModel = {
     //  Collaborative Filtering
     val als = new ALS()
       .setRank(latentFactors)
+      .setNumBlocks(num_blocks)
       .setMaxIter(maxItr)
       .setRegParam(regularizingParam)
       .setAlpha(alpha)

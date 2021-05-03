@@ -6,7 +6,7 @@ scalastyleFailOnWarning := true
 
 fork in run := true
 
-val sparkVersion = "3.1.1"
+val sparkVersion = "3.0.0"
 resolvers ++= Seq(
   "osgeo" at "https://repo.osgeo.org/repository/release",
   "confluent" at "https://packages.confluent.io/maven"

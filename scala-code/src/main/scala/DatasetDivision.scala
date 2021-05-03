@@ -43,7 +43,7 @@ object DatasetDivision {
           new StructType()
             .add("user_id", LongType, nullable = false)
         )
-        .csv(out_dir + "year_" + year.toString + "_subscribers.csv")
+        .orc(out_dir + "subscribed_users/year_" + year.toString + "_subscribers.orc")
 
       val Array(train, test_RS, test_EA) = subscribed_users.randomSplit(Array(0.6, 0.2, 0.2), 424356)
       println("\nyear " + year.toString)

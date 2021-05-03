@@ -45,7 +45,7 @@ object CollaborativeFiltering_UserRecord {
     val user_recs_interactions = arangoDBHandler.getUserToRecordingEdges()
 
     // CrossValidation for hyperparameter tuning
-//    hyperparameterTuning(user_recs_interactions, spark)
+//    hyperparameterTuning(user_rec_interactions, spark)
 
     testRecommendationsGeneration(user_recs_interactions, spark)
 
@@ -78,7 +78,8 @@ object CollaborativeFiltering_UserRecord {
           hyperparameters.getOrElse("latentFactors", -1).asInstanceOf[Int],
           hyperparameters.getOrElse("maxItr", -1).asInstanceOf[Int],
           hyperparameters.getOrElse("regularizingParam", -1.0).asInstanceOf[Double],
-          hyperparameters.getOrElse("alpha", -1.0).asInstanceOf[Double])
+          hyperparameters.getOrElse("alpha", -1.0).asInstanceOf[Double],
+          num_blocks =hyperparameters.getOrElse("num_blocks", 10).asInstanceOf[Int])
 
         val predictions = model.transform(rand_validation)
         val rmse = CF_utils.getRMSE(predictions)
@@ -135,26 +136,30 @@ object CollaborativeFiltering_UserRecord {
     val test_user_ids = sparkSession.read
       .orc(out_dir + s"holdout/users/year-${year}-test_${RS_or_EA}.orc")
     Array(1, 2, 3).foreach(set => {
-      println("set " + set.toString)
+      println(s"set $set")
 
       val test_train_interaction_keys = sparkSession.read
-        .orc(out_dir + s"holdout/interactions/year_${year}-test_RS-train_interactions-set_${set}.orc")
+        .orc(out_dir + s"holdout/interactions/year_${year}-test_${RS_or_EA}-train_interactions-set_${set}.orc")
 
       val test_train_interactions = CF_utils.preprocessEdges(
         user_recs_interactions.join(test_train_interaction_keys, Seq("_key"), "inner"),
         test_user_ids, year, rating_lower_threshold)
+//      test_train_interactions.printSchema()
+//      println(s"test_train_interactions size = ${test_train_interactions.count()}")
 
       val model = CF_utils.getCFModel(train_interactions.union(test_train_interactions),
         hyperparameters.getOrElse("latentFactors", -1).asInstanceOf[Int],
         hyperparameters.getOrElse("maxItr", -1).asInstanceOf[Int],
         hyperparameters.getOrElse("regularizingParam", -1.0).asInstanceOf[Double],
-        hyperparameters.getOrElse("alpha", -1.0).asInstanceOf[Double])
+        hyperparameters.getOrElse("alpha", -1.0).asInstanceOf[Double],
+        num_blocks = hyperparameters.getOrElse("num_blocks", 10).asInstanceOf[Int])
 
       // Get recommendations :)
       val raw_recommendations = CF_utils.getRecommendations(model, test_user_ids, items_to_recommend)
       val recommendations = CF_utils.postprocessRecommendations(raw_recommendations)
 
       recommendations
+        .coalesce(1)
         .write
         .mode(SaveMode.Overwrite)
         .orc(out_dir + s"output-${RS_or_EA}/CF-user_rec/year_${year}-CF-user_rec-set_${set}.orc")
