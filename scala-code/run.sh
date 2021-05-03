@@ -3,8 +3,8 @@
 
 num_executors=1
 executor_cores=12
-executor_memory=20g
-driver_memory=3g
+executor_memory=5g
+driver_memory=10g
 jarfile='target/scala-2.12/MLHD-insights-assembly-1.0.jar'
 outdir='file:/io/data/processed/'
 #--------- Spark Configuration END ----------------------------
@@ -13,7 +13,7 @@ outdir='file:/io/data/processed/'
 if [ $# -eq 0 ]
   then
     # No arguments supplied
-    HEIGHT=15
+    HEIGHT=20
     WIDTH=40
     CHOICE_HEIGHT=4
     BACKTITLE="Backtitle here"
@@ -27,8 +27,8 @@ if [ $# -eq 0 ]
              4 "Divide Dataset for Experiments"
              5 "User-Record Collaborative Filtering"
              6 "User-Artist Collaborative Filtering"
-             7 "LSH Collision Analysis"
-             8 "ABz Nearest-Neighbour Recommenders"
+             7 "Pop Recommender"
+             8 "ABz Nearest-Neighbour Recommender"
              9 "TestAzureStorage"
              )
 
@@ -66,10 +66,10 @@ case $CHOICE in
             mainClass=CollaborativeFiltering_UserArtist
             ;;
         7)
-            mainClass=LSHCollisionAnalysis
+            mainClass=PopRecommender
             ;;
         8)
-            mainClass=ABzRecommenders
+            mainClass=ABzRecommender
             ;;
         9)
             mainClass=Test
