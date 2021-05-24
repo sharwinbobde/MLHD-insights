@@ -1,6 +1,6 @@
 num_cpu = 12
 # experiment_years = [2005, 2008]
-experiment_years = [2005, ]
+experiment_years = [2005, 2008, 2012]
 
 # number of listens for an item upto which its considered as `novel`(unexplored/new)
 novelty_threshold = 40
@@ -18,5 +18,7 @@ ABz_GPU_hashed_output_dir = "/run/media/sharwinbobde/ExtraStorage/2M-hashed.parq
 ABz_GPU_hashed_coalesced = "/run/media/sharwinbobde/ExtraStorage/2M-hashed-coalesced.parquet"
 
 CUDA_neighbour_search_stats_dir = "/run/media/sharwinbobde/ExtraStorage/neighbour_search/stats/"
+CUDA_neighbour_search_df_dir = "/run/media/sharwinbobde/ExtraStorage/neighbour_search/test-data/"
+CUDA_neighbour_search_df_result_dir = "/run/media/sharwinbobde/ExtraStorage/neighbour_search/test-results/"
 
 EA_experiment_output_dir = "/run/media/sharwinbobde/ExtraStorage/EA-output/"

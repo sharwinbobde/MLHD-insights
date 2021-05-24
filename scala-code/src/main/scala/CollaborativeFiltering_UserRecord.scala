@@ -14,6 +14,7 @@ object CollaborativeFiltering_UserRecord {
   val ratingCol = "rating"
   val items_to_recommend = 100
   val experiment_years: Array[Int] = Array(2005, 2008, 2012)
+//  val experiment_years: Array[Int] = Array(2012)
 
   val rating_lower_threshold = 25
   val CF_utils: CollabFilteringUtils = new CollabFilteringUtils(

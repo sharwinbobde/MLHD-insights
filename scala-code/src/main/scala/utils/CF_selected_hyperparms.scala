@@ -11,7 +11,7 @@ object CF_selected_hyperparms {
     ),
 
     2006 -> Map(
-      "latentFactors" -> 10,
+      "latentFactors" -> 11,
       "maxItr" -> 10,
       "regularizingParam" -> 1.0,
       "alpha" -> 1.0,
@@ -27,7 +27,7 @@ object CF_selected_hyperparms {
     ),
 
     2008 -> Map(
-      "latentFactors" -> 12,
+      "latentFactors" -> 13,
       "maxItr" -> 10,
       "regularizingParam" -> 1.0,
       "alpha" -> 1.0,
@@ -35,7 +35,7 @@ object CF_selected_hyperparms {
     ),
 
     2009 -> Map(
-      "latentFactors" -> 13,
+      "latentFactors" -> 14,
       "maxItr" -> 10,
       "regularizingParam" -> 1.0,
       "alpha" -> 1.0,
@@ -43,7 +43,7 @@ object CF_selected_hyperparms {
     ),
 
     2010 -> Map(
-      "latentFactors" -> 15,
+      "latentFactors" -> 14,
       "maxItr" -> 10,
       "regularizingParam" -> 1.0,
       "alpha" -> 1.0,
@@ -51,7 +51,7 @@ object CF_selected_hyperparms {
     ),
 
     2011 -> Map(
-      "latentFactors" -> 16,
+      "latentFactors" -> 15,
       "maxItr" -> 10,
       "regularizingParam" -> 1.0,
       "alpha" -> 1.0,
@@ -59,7 +59,7 @@ object CF_selected_hyperparms {
     ),
 
     2012 -> Map(
-      "latentFactors" -> 18,
+      "latentFactors" -> 15,
       "maxItr" -> 10,
       "regularizingParam" -> 1.0,
       "alpha" -> 1.0,

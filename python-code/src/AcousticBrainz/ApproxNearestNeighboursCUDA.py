@@ -4,6 +4,7 @@ from numba import cuda
 import numpy as np
 import pandas as pd
 import os
+
 os.environ['CUDA_HOME'] = "/opt/cuda/"
 
 ARCHIVE_REGISTER_THRESHOLD = 1000
@@ -13,20 +14,22 @@ SEARCH_SIZE = 200
 
 UPDATE_SUPPORT_NEIGHBOURS = 3
 
-CURRICULUM_SIZE = 5000
+CURRICULUM_SIZE = 1000
 
 rows = CURRICULUM_SIZE  # start with small number of records and increase at every level
 ITERATIONS_PER_CURRICULUM_LEVEL = 10
 
 
 @cuda.jit
-def neighbour_search_step(H, search_i, archive_i, archive_d, rows_this_curr, curriculum_num, iteration_num):
+def neighbour_search_step(H, search_i, archive_i, archive_d, observed_mean_arr, rows_this_curr,
+                          curriculum_num, iteration_num):
     x = cuda.grid(1)
     # execute for each row
     N = rows_this_curr[0]
     if x >= N:
         return
-
+    observed_count = 0
+    observed_sum = 0
     for run in range(SEARCH_SIZE):
         if run < (SEARCH_SIZE / 2):
             search_index = search_i[x, run] % N
@@ -48,6 +51,9 @@ def neighbour_search_step(H, search_i, archive_i, archive_d, rows_this_curr, cur
             var0 += var0 >> 8
             var0 += var0 >> 16
             dist += var0 & 63
+
+        observed_count += 1
+        observed_sum += dist
 
         # find location to insert
         FLAG_NOT_duplicate = True
@@ -77,6 +83,8 @@ def neighbour_search_step(H, search_i, archive_i, archive_d, rows_this_curr, cur
                     temp_i_1, temp_d_1 = temp_i_2, temp_d_2
                     itr += 1
 
+    observed_mean_arr[x] = observed_sum / observed_count
+
 
 @cuda.jit()
 def update_step(search_i, archive_i, rows_this_curr):
@@ -97,96 +105,121 @@ def update_step(search_i, archive_i, rows_this_curr):
             search_i[x, int(i * update_window + j)] = archive_item_to_search
 
 
-def calc_quality(archive_d_qual, rows_, rows_curr_gpu):
-    blocks_per_grid_quality = min([rows_, 1000])
-    threads_per_block_quality = int(rows_ / blocks_per_grid_quality) + 1
-    quality_sum = cuda.to_device(np.zeros(shape=rows_, dtype=np.int32))
+class ApproxNearestNeighboursCUDA:
 
-    @cuda.jit
-    def quality_sum_kernal(archive_d, qual_sum, rows_this_curr):
-        x = cuda.grid(1)
-        # execute for each row
-        if x >= rows_this_curr[0]:
-            return
-        sum_ = 0
-        for i in range(int(NEIGHBOURS_ARCHIVE_SIZE / 2)):
-            sum_ += archive_d[x, i]
-        qual_sum[x] = sum_
+    def calc_quality_metrics(self, archive_d_qual, observed_mean_arr_qual, rows_, rows_curr_gpu):
+        blocks_per_grid_quality = min([rows_, 1000])
+        threads_per_block_quality = int(rows_ / blocks_per_grid_quality) + 1
+        quality_sum = cuda.to_device(np.zeros(shape=rows_, dtype=np.int32))
 
-    quality_sum_kernal[blocks_per_grid_quality, threads_per_block_quality](archive_d_qual, quality_sum,
-                                                                           rows_curr_gpu)
-    cuda.synchronize()
-    quality_sum = quality_sum.copy_to_host()
-    return np.mean(quality_sum), np.std(quality_sum)
+        @cuda.jit
+        def quality_sum_kernal(archive_d, qual_sum, rows_this_curr):
+            x = cuda.grid(1)
+            # execute for each row
+            if x >= rows_this_curr[0]:
+                return
+            sum_ = 0
+            for i in range(int(NEIGHBOURS_ARCHIVE_SIZE / 2)):
+                sum_ += archive_d[x, i]
+            qual_sum[x] = sum_
 
+        quality_sum_kernal[blocks_per_grid_quality, threads_per_block_quality](archive_d_qual, quality_sum,
+                                                                               rows_curr_gpu)
+        cuda.synchronize()
+        quality_sum = quality_sum.copy_to_host()
 
-def get_observed_dist():
-    # TODO
-    pass
+        observed_means = observed_mean_arr_qual.copy_to_host()[0:rows_]
 
+        return np.mean(quality_sum), np.std(quality_sum), np.mean(observed_means), np.std(observed_means)
 
-def run(df: pd.DataFrame, features_column: str):
-    stats = []
-    ROWS_MAX = df.shape[0]
-    CURRICULUM_LEVELS = int(ROWS_MAX / CURRICULUM_SIZE)
-    if ROWS_MAX % CURRICULUM_SIZE != 0:
-        CURRICULUM_LEVELS += 1
-    A = np.array(df[features_column].values.tolist(), dtype=np.int32)
+    def get_observed_dist(self, ):
+        # TODO
+        pass
 
-    A_gpu = cuda.to_device(A)
-    print(f"A_gpu.alloc_size = {A_gpu.alloc_size}")
+    def run(self, df: pd.DataFrame, features_column: str, verbose: bool = True):
+        stats = []
+        ROWS_MAX = df.shape[0]
+        CURRICULUM_LEVELS = int(ROWS_MAX / CURRICULUM_SIZE)
+        if ROWS_MAX % CURRICULUM_SIZE != 0:
+            CURRICULUM_LEVELS += 1
+        A = np.array(df[features_column].values.tolist(), dtype=np.int32)
 
-    archive_index = cuda.to_device(np.ones(shape=(ROWS_MAX, NEIGHBOURS_ARCHIVE_SIZE), dtype=np.uint32) * -1)
-    print(f"archive_index.alloc_size = {filesize.size(archive_index.alloc_size)}")
+        A_gpu = cuda.to_device(A)
+        if verbose: print(f"A_gpu.alloc_size = {A_gpu.alloc_size}")
 
-    archive_dist = cuda.to_device(
-        np.ones(shape=(ROWS_MAX, NEIGHBOURS_ARCHIVE_SIZE), dtype=np.uint16) * np.iinfo(np.uint16).max)
-    print(f"archive_dist.alloc_size = {filesize.size(archive_dist.alloc_size)}")
+        archive_index = cuda.to_device(np.ones(shape=(ROWS_MAX, NEIGHBOURS_ARCHIVE_SIZE), dtype=np.uint32) * -1)
+        if verbose: print(f"archive_index.alloc_size = {filesize.size(archive_index.alloc_size)}")
 
-    search_matrix_index = cuda.to_device(
-        np.random.randint(low=0, high=np.iinfo(np.int32).max, size=(ROWS_MAX, SEARCH_SIZE), dtype=np.uint32))
-    print(f"search_matrix_index.alloc_size = {filesize.size(search_matrix_index.alloc_size)}")
-    FLAG_tempering = False
-    for curriculum_level in range(CURRICULUM_LEVELS):
-        print(f"CURRICULUM_LEVEL = {curriculum_level + 1}/{CURRICULUM_LEVELS}")
-        rows = int(CURRICULUM_SIZE * (curriculum_level + 1))
-        if rows >= ROWS_MAX:
-            rows = ROWS_MAX
-            FLAG_tempering = True
+        archive_dist = cuda.to_device(
+            np.ones(shape=(ROWS_MAX, NEIGHBOURS_ARCHIVE_SIZE), dtype=np.uint16) * np.iinfo(np.uint16).max)
+        if verbose: print(f"archive_dist.alloc_size = {filesize.size(archive_dist.alloc_size)}")
 
-        print(f"number of rows (recordings) = {rows}")
-        curriculum_level_gpu = cuda.to_device(np.array([curriculum_level], dtype=np.int32))
-        rows_gpu = cuda.to_device(np.array([rows], dtype=np.int32))
+        search_matrix_index = cuda.to_device(
+            np.random.randint(low=0, high=np.iinfo(np.int32).max, size=(ROWS_MAX, SEARCH_SIZE), dtype=np.uint32))
+        if verbose: print(f"search_matrix_index.alloc_size = {filesize.size(search_matrix_index.alloc_size)}")
 
-        blocks_per_grid = min([int(rows / 10), 50000])
-        threads_per_block = int(rows / blocks_per_grid) + 1
+        observed_means_arr = cuda.to_device(
+            np.empty(shape=(ROWS_MAX), dtype=np.float32))
+        if verbose: print(f"observed_means_arr.alloc_size = {filesize.size(observed_means_arr.alloc_size)}")
 
-        with cuda.defer_cleanup():
-            # iterations of the Search and Update steps
-            iterations_this_round = ITERATIONS_PER_CURRICULUM_LEVEL
-            if FLAG_tempering:
-                iterations_this_round = int(ITERATIONS_PER_CURRICULUM_LEVEL * 5)
+        FLAG_tempering = False
+        for curriculum_level in range(CURRICULUM_LEVELS):
+            if verbose: print(f"CURRICULUM_LEVEL = {curriculum_level + 1}/{CURRICULUM_LEVELS}")
+            rows = int(CURRICULUM_SIZE * (curriculum_level + 1))
+            if rows >= ROWS_MAX:
+                rows = ROWS_MAX
+                FLAG_tempering = True
 
-            for iteration in range(iterations_this_round):
-                iteration_gpu = cuda.to_device(np.array([iteration], dtype=np.int32))
-                # neighbour search
-                neighbour_search_step[blocks_per_grid, threads_per_block](
-                    A_gpu, search_matrix_index, archive_index, archive_dist, rows_gpu, curriculum_level_gpu,
-                    iteration_gpu)
+            if verbose: print(f"number of rows (recordings) = {rows}")
 
-                # Wait for GPU to complete
-                cuda.synchronize()
+            curriculum_level_gpu = cuda.to_device(np.array([curriculum_level], dtype=np.int32))
+            rows_gpu = cuda.to_device(np.array([rows], dtype=np.int32))
 
-                # update search direction based on archive: sees archive_index and updates search_matrix_index
-                update_step[blocks_per_grid, threads_per_block](search_matrix_index, archive_index, rows_gpu)
+            blocks_per_grid = min([int(rows / 10), 50000])
+            threads_per_block = int(rows / blocks_per_grid) + 1
 
-                # print(search_matrix_index.copy_to_host()[200000, :])
+            with cuda.defer_cleanup():
+                # iterations of the Search and Update steps
+                iterations_this_round = ITERATIONS_PER_CURRICULUM_LEVEL
+                if FLAG_tempering:
+                    iterations_this_round = int(ITERATIONS_PER_CURRICULUM_LEVEL * 5)
 
-                # Evaluate Solution Quality: sees archive_dist and updates search_i
-                quality_mean, quality_std = calc_quality(archive_dist, rows, rows_gpu)
-                print(f" quality indicator: mean = {quality_mean} \t std={quality_std}")
+                for iteration in range(iterations_this_round):
+                    iteration_gpu = cuda.to_device(np.array([iteration], dtype=np.int32))
+                    # neighbour search
+                    neighbour_search_step[blocks_per_grid, threads_per_block](
+                        A_gpu, search_matrix_index, archive_index, archive_dist, observed_means_arr,
+                        rows_gpu, curriculum_level_gpu, iteration_gpu)
 
-                stats.append([datetime.now(), curriculum_level, iteration, rows, quality_mean, quality_std])
+                    # Wait for GPU to complete
+                    cuda.synchronize()
 
-                # wait for all computations to complete
-                cuda.synchronize()
+                    # update search direction based on archive: sees archive_index and updates search_matrix_index
+                    update_step[blocks_per_grid, threads_per_block](search_matrix_index, archive_index, rows_gpu)
+
+                    # print(search_matrix_index.copy_to_host()[200000, :])
+
+                    # Evaluate Solution Quality: sees archive_dist and updates search_i
+                    quality_mean, quality_std, obs_mean, obs_std = self.calc_quality_metrics(archive_dist,
+                                                                                             observed_means_arr,
+                                                                                             rows,
+                                                                                             rows_gpu)
+                    if verbose: print(f"quality indicator: mean={quality_mean}\tstd={quality_std}\t|\t "
+                                      f"observed: mean={obs_mean}\tstd={obs_std}")
+
+                    stats.append(
+                        [datetime.now(), curriculum_level, iteration, rows, quality_mean, quality_std, obs_mean,
+                         obs_std])
+
+                    # wait for all computations to complete
+                    cuda.synchronize()
+
+        df['row_id'] = np.arange(df.shape[0]).astype(np.int32)
+        df['neighbours'] = [x for x in
+                            archive_index.copy_to_host().astype(np.int32)[:, 0:int(NEIGHBOURS_ARCHIVE_SIZE / 2)]]
+        df['neighbour_dist'] = [x for x in
+                                archive_dist.copy_to_host().astype(np.int32)[:, 0:int(NEIGHBOURS_ARCHIVE_SIZE / 2)]]
+        stats_df = pd.DataFrame(data=stats, columns=['timestamp', 'curriculum_level', 'iteration', 'rows',
+                                                     'quality_indicator_mean', 'quality_indicator_std',
+                                                     'observed_mean', 'observed_std'])
+        return df, stats_df

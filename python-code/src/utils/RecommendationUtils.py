@@ -17,7 +17,7 @@ class RecommendationUtils:
 
     def __init__(self, data_stem: str, RS_or_EA: str):
         if RS_or_EA not in ["RS", "EA"]:
-            raise ValueError("value for test_set_type fhould be either \"RS\" or \"EA\"")
+            raise ValueError("value for test_set_type should be either \"RS\" or \"EA\"")
 
         self.RS_or_EA = RS_or_EA
         self.data_stem = data_stem

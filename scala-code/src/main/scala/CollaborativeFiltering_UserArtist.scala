@@ -9,7 +9,7 @@ object CollaborativeFiltering_UserArtist {
   val ratingCol = "rating"
   val items_to_recommend = 100
   val experiment_years: Array[Int] = Array(2005, 2008, 2012)
-//  val experiment_years: Array[Int] = Array(2012)
+//  val experiment_years: Array[Int] = Array(2005, 2008)
   val sample_items_per_artist = 10
 
   val rating_lower_threshold = 25

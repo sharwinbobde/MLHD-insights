@@ -4,7 +4,8 @@
 
 # user: root
 # pass: "Happy2Help!"
-database_path="/run/media/sharwinbobde/SharwinThesis/agarodb_data"
+#database_path="/run/media/sharwinbobde/SharwinThesis/agarodb_data"
+database_path="/run/media/sharwinbobde/SharwinThesis/agarodb_data_25"
 
 arangodb --starter.mode single --starter.data-dir $database_path \
         --dbservers.rocksdb.write-buffer-size 100123400 \

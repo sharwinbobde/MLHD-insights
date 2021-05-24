@@ -1,16 +1,23 @@
+from datetime import datetime
 import logging
 import sys
+from typing import List
 
 import pandas as pd
 import recmetrics
 import numpy as np
 from config import experiment_years
 from src.utils.RecommendationUtils import RecommendationUtils
-from pyspark.sql import SparkSession
+import scipy.sparse as sp
+from hurry import filesize
+from sklearn.metrics.pairwise import cosine_similarity
+from tqdm import tqdm
+
+from numba import njit, prange, jit
 
 data_stem = "../../scala-code/data/processed/"
 
-valid_models = ["CF-user_rec", "CF-user_artist", "Pop"]
+valid_models = ["CF-user_rec", "CF-user_artist", "Pop", "Tailored"]
 
 
 class MetricsEvaluator:
@@ -105,6 +112,44 @@ class MetricsEvaluator:
             sys.exit(0)
         return metric
 
+    def modified_personalization(self, recs: dict, k: int):
+        try:
+            predicted = np.array(list(recs.values()), dtype=np.int64)
+        except ValueError:
+            print("caught")
+            temp_arr = list(recs.values())
+            processed_arr = list()
+            removed_users = 0
+            for row in temp_arr:
+                if len(row) == k:
+                    processed_arr.append(row)
+                else:
+                    removed_users += 1
+            print(
+                f"Warning! removed {removed_users} of {len(recs)} ({round(removed_users / len(recs) * 100,2)}%)"
+                f" users with recommendation length < {k}")
+            predicted = np.array(processed_arr, dtype=np.int64)
+
+        @njit(parallel=True)
+        def func(arr: np.ndarray, rec_list_size: int):
+            N = arr.shape[0]
+            T = (N * (N - 1) / 2)
+            out = np.empty(shape=int(T))
+            for m in prange(0, N):
+                for n in prange(m + 1, N):
+                    intersect_count = 0
+                    a = arr[m, :]
+                    b = arr[n, :]
+                    for i in range(rec_list_size):
+                        for j in range(rec_list_size):
+                            if a[i] == b[j]:
+                                intersect_count += 1
+                    dot = intersect_count
+                    out[int(n * (n - 1) / 2) + m - 1] = dot / rec_list_size
+            return 1 - np.mean(out)
+
+        return func(predicted, k)
+
     def novelty(self, recs: dict, K: int):
         """
         assumes numeric item codes
@@ -126,83 +171,102 @@ class MetricsEvaluator:
         catalog = list(self.catalog.keys())
         return recmetrics.prediction_coverage(arr, catalog) / 100.0
 
-    def modified_diversity(self, recs: dict):
-        arr = list(recs.values())
-        df = pd.DataFrame(np.array(arr))
-
     def familiarity(self, recs):
         # TODO
         return -1
 
-    def get_all_metrics(self, recs: dict, set_num: int, K: int) -> dict:
-        m = dict()
-        m['MAR'] = self.mark(recs, set_num, K)
-        m['MAR_filtered'] = self.mark_filter_valid(recs, set_num, K)
-        m['NaN_Prop'], _, _ = self.NaN_Proportion(recs, set_num)
-        m['Pers'] = self.personalization(recs)
-        m['Nov'] = self.novelty(recs, K)
-        m['Cov'] = self.coverage(recs)
-        m['Fam'] = self.familiarity(recs)
-        return m
+    # def get_all_metrics(self, recs: dict, set_num: int, K: int) -> dict:
+    #     m = dict()
+    #     m['MAR'] = self.mark(recs, set_num, K)
+    #     m['MAR_filtered'] = self.mark_filter_valid(recs, set_num, K)
+    #     m['NaN_Prop'], _, _ = self.NaN_Proportion(recs, set_num)
+    #     m['Pers'] = self.personalization(recs)
+    #     m['Nov'] = self.novelty(recs, K)
+    #     m['Cov'] = self.coverage(recs)
+    #     m['Fam'] = self.familiarity(recs)
+    #     return m
 
-    def get_metrics(self, metrics: list[str], recs: dict, set_num: int, K: int) -> dict:
+    def get_metrics(self, metrics: list[str], recs: dict, set_num: int, K: int, verbose: bool = False) -> dict:
         m = dict()
         for met in metrics:
+            if verbose:
+                print(f'evaluating {met}')
+                verbose_start = datetime.now()
+
             if met == 'MAR':
-                m['MAR'] = self.mark(recs, set_num, K)
+                m[met] = self.mark(recs, set_num, K)
 
-            if met == 'MAR_filtered':
-                m['MAR_filtered'] = self.mark_filter_valid(recs, set_num, K)
+            elif met == 'MAR_filtered':
+                m[met] = self.mark_filter_valid(recs, set_num, K)
 
-            if met == 'NaN_Prop':
-                m['NaN_Prop'], _, _ = self.NaN_Proportion(recs, set_num)
+            elif met == 'NaN_Prop':
+                m[met], _, _ = self.NaN_Proportion(recs, set_num)
 
-            if met == 'Pers':
-                m['Pers'] = self.personalization(recs)
+            elif met == 'Pers':
+                m[met] = self.personalization(recs)
 
-            if met == 'Nov':
-                m['Nov'] = self.novelty(recs, K)
+            elif met == 'modPers':
+                m[met] = self.modified_personalization(recs, k=K)
 
-            if met == 'Cov':
-                m['Cov'] = self.coverage(recs)
+            elif met == 'Nov':
+                m[met] = self.novelty(recs, K)
 
-            if met == 'Fam':
-                m['Fam'] = self.familiarity(recs)
+            elif met == 'Cov':
+                m[met] = self.coverage(recs)
+
+            elif met == 'Fam':
+                m[met] = self.familiarity(recs)
+            else:
+                raise Exception("metrics option did not match")
+
+            if verbose:
+                verbose_end = datetime.now()
+                print(f"duration {verbose_end - verbose_start}")
         return m
 
 
 if __name__ == '__main__':
-    k_ = 10
+    k_ = 15
     set_ = 1
     metrics_evaluators = {}
-    models_ = ["CF-user_rec", "CF-user_artist"]
-    archive_parts_test = 100
+    models_ = ["Tailored", "CF-user_rec", "CF-user_artist"]
+    # archive_parts_test = 100
     for yr in experiment_years:
-        metrics_evaluators[yr] = MetricsEvaluator(models=models_, year=yr, k=k_, archive_size=archive_parts_test)
+        # metrics_evaluators[yr] = MetricsEvaluator(models=models_, year=yr, k=k_, archive_size=archive_parts_test)
+        metrics_evaluators[yr] = MetricsEvaluator(models=models_, year=yr, k=k_)
     # TODO filter users to have some specified number of items
+    metrics = ['MAR', 'Cov', 'modPers', 'Nov']
+    # metrics = ['MAR', 'Cov', 'Nov']
+    # metrics = ['modPers', 'Pers']
 
     print("Test for single recommenders")
     for model_ in models_:
         print("\nmodel = " + model_)
         for yr in experiment_years:
-            print(f"year: {yr}")
+            print(f"\nyear: {yr}")
+
+            start = datetime.now()
             recs_df = metrics_evaluators[yr].recommendation_dfs[(model_, set_)]
             recs_ = RecommendationUtils.get_recommendations_dict_from_single_df(df=recs_df)
-            m_ = metrics_evaluators[yr].get_all_metrics(recs=recs_, set_num=set_, K=k_)
+            m_ = metrics_evaluators[yr].get_metrics(metrics=metrics, recs=recs_, set_num=set_, K=k_, verbose=True)
+            end = datetime.now()
+            print(f"metrics took {end - start}")
             print(m_)
 
     print("\nTest for multiple recommenders")
-    models = ["CF-user_rec", "CF-user_artist"]
-    weights = [0.4, 0.6 ]
+    weights = [0.5, 0.25, 0.25]
     K_ = k_
     for yr in experiment_years:
-        print(f"year: {yr}")
+        print(f"\nyear: {yr}")
+        start = datetime.now()
         recs_ = RecommendationUtils \
             .get_recommendations_dict_from_many_df(models=models_,
                                                    model_recs_df=metrics_evaluators[yr].recommendation_dfs,
                                                    set_num=set_,
                                                    reranking_weights=weights,
                                                    K=k_)
-        m_ = metrics_evaluators[yr].get_all_metrics(recs=recs_, set_num=set_, K=K_)
+        m_ = metrics_evaluators[yr].get_metrics(metrics=metrics, recs=recs_, set_num=set_, K=K_, verbose=True)
+        end = datetime.now()
+        print(f"metrics took {end - start}")
         print(m_)
     print("DONE")

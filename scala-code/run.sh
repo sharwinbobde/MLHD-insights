@@ -27,9 +27,9 @@ if [ $# -eq 0 ]
              4 "Divide Dataset for Experiments"
              5 "User-Record Collaborative Filtering"
              6 "User-Artist Collaborative Filtering"
-             7 "Pop Recommender"
+             7 "Save MBIDs With Features"
              8 "ABz Nearest-Neighbour Recommender"
-             9 "TestAzureStorage"
+             9 "Tailored Recommender"
              )
 
     CHOICE=$(dialog --clear \
@@ -66,13 +66,13 @@ case $CHOICE in
             mainClass=CollaborativeFiltering_UserArtist
             ;;
         7)
-            mainClass=PopRecommender
+            mainClass=SaveMBIDsWithFeatures
             ;;
         8)
             mainClass=ABzRecommender
             ;;
         9)
-            mainClass=Test
+            mainClass=TailoredRecommender
             ;;
         *)
             echo "Option did not match"

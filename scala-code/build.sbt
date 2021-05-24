@@ -17,7 +17,7 @@ libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-sql" % sparkVersion % "provided",
   "org.apache.spark" %% "spark-mllib" % sparkVersion % "provided",
   "com.arangodb" %% "arangodb-spark-connector" % "1.1.0",
-  "org.apache.hadoop" % "hadoop-azure" % "2.7.3"
+//  "org.apache.hadoop" % "hadoop-azure" % "2.7.3"
 
 )
 

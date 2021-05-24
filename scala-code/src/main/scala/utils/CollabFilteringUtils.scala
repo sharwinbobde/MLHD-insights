@@ -61,7 +61,7 @@ class CollabFilteringUtils(val user_colname: String, val item_colname: String, v
   def preprocessEdges(interactions: Dataset[Row], user_ids: Dataset[Row], selected_year: Int, rating_lower_threshold: Int): Dataset[Row] = {
     interactions
       .select(user_colname, item_colname, "years.*")
-      .withColumnRenamed("yr_" + selected_year.toString, rating_colname)
+      .withColumnRenamed(s"yr_$selected_year", rating_colname)
       .filter(s"$rating_colname >= $rating_lower_threshold")
       .join(user_ids, Seq(user_colname), joinType = "inner")
       .select(user_colname, item_colname, rating_colname)

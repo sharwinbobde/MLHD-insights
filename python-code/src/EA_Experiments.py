@@ -18,7 +18,7 @@ from src.utils.RecSysProblem import RecSysProblem
 
 def configure_experiment(problems: dict, n_run: int):
     jobs = []
-    num_processes = 5
+    num_processes = 12
     population = 10
     generations = 2
     max_evaluations = population * generations
@@ -112,11 +112,11 @@ if __name__ == '__main__':
     for set_ in range(1, 4):
         problems[f"RecSys_{set_}"] = RecSysProblem(RS_or_EA=RS_or_EA,
                                                    models=["CF-user_rec", "CF-user_artist"],
-                                                   metrics=['MAR', 'Cov', 'Pers', 'Nov'],
+                                                   metrics=['MAR', 'Cov', 'modPers', 'Nov'],
                                                    year=2008,
                                                    set_=set_,
-                                                   k=15,
-                                                   K=15)
+                                                   k=20,
+                                                   K=20)
 
     # Configure the experiments
     jobs = configure_experiment(problems=problems, n_run=1)
