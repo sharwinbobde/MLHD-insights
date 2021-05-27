@@ -124,6 +124,6 @@ class RecommendationUtils:
         df = pd.DataFrame()
         df["rec_id"] = list(catalog.keys())
         df["count"] = df.rec_id.map(lambda x: catalog[x])
-        novelty_threshold = df['count'].quantile(0.8)
+        novelty_threshold = df['count'].quantile(0.66)
 
         return novelty_threshold
