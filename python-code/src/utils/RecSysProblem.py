@@ -28,8 +28,9 @@ class RecSysProblem(FloatProblem):
 
         self.metrics_evaluator = MetricsEvaluator(RS_or_EA=RS_or_EA,
                                                   year=year, k=k,
-                                                  models=["CF-user_rec", "CF-user_artist"],
-                                                  archive_size=100)
+                                                  models=self.models,
+                                                  # archive_size=100
+                                                  )
 
         self.lower_bound = [0.0 for _ in range(self.number_of_variables)]
         self.upper_bound = [1.0 for _ in range(self.number_of_variables)]
