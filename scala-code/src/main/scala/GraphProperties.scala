@@ -50,20 +50,20 @@ object GraphProperties {
     val arr2 = getEdgeSums(users_to_artists, max_parts)
     m += ("users_to_artists_sums" -> JSONObject(arr2(0)))
 
-    (10 to max_parts by 20).foreach(upto_part => {
-      val arr3 = getEdgeSums(users_to_recs, upto_part)
-      m += ("users_to_recs_upto_part_" + upto_part.toString + "_sums" -> JSONObject(arr3(0)))
-    })
-
-    (10 to max_parts by 20).foreach(upto_part => {
-      val arr4 = getEdgeSums(users_to_artists, upto_part)
-      m += ("users_to_artists_upto_part_" + upto_part.toString + "_sums" -> JSONObject(arr4(0)))
-    })
+//    (10 to max_parts by 20).foreach(upto_part => {
+//      val arr3 = getEdgeSums(users_to_recs, upto_part)
+//      m += ("users_to_recs_upto_part_" + upto_part.toString + "_sums" -> JSONObject(arr3(0)))
+//    })
+//
+//    (10 to max_parts by 20).foreach(upto_part => {
+//      val arr4 = getEdgeSums(users_to_artists, upto_part)
+//      m += ("users_to_artists_upto_part_" + upto_part.toString + "_sums" -> JSONObject(arr4(0)))
+//    })
 
     // Stop the underlying SparkContext
     sc.stop
 
-    val file = new File(out_dir.substring(9) + "graph_properties.json")
+    val file = new File(out_dir.substring(5) + "graph_properties.json")
     val bw = new BufferedWriter(new FileWriter(file))
     bw.write(JSONObject(m).toString())
     bw.close()

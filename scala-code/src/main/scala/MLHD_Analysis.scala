@@ -105,7 +105,7 @@ object MLHD_Analysis {
           percentiles_to_extract, 0.0).asJson)
 
     })
-    val bw = new BufferedWriter(new FileWriter(new File(out_dir.substring(9) + "user_rec_listen_percentiles_by_year.json")))
+    val bw = new BufferedWriter(new FileWriter(new File(out_dir.substring(5) + "user_rec_listen_percentiles_by_year.json")))
     bw.write(m.asJson.spaces2SortKeys)
     bw.close()
   }
@@ -128,7 +128,7 @@ object MLHD_Analysis {
     })
 
 
-    val bw = new BufferedWriter(new FileWriter(new File(out_dir.substring(9) + "normalised_user_rec_listen_percentiles_by_year.json")))
+    val bw = new BufferedWriter(new FileWriter(new File(out_dir.substring(5) + "normalised_user_rec_listen_percentiles_by_year.json")))
     bw.write(m.asJson.spaces2SortKeys)
     bw.close()
   }

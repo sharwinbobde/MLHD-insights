@@ -12,11 +12,11 @@ import scala.collection.mutable.ArrayBuffer
 object CollaborativeFiltering_UserRecord {
 
   val ratingCol = "rating"
-  val items_to_recommend = 100
+  val items_to_recommend = 50
   val experiment_years: Array[Int] = Array(2005, 2008, 2012)
 //  val experiment_years: Array[Int] = Array(2012)
 
-  val rating_lower_threshold = 25
+  val rating_lower_threshold = 20
   val CF_utils: CollabFilteringUtils = new CollabFilteringUtils(
     "user_id",
     "rec_id",
@@ -96,7 +96,7 @@ object CollaborativeFiltering_UserRecord {
         year_hyperparameter_with_error_array += json.asJson
         val bw = new BufferedWriter(
           new FileWriter(
-            new File(out_dir.substring(9) + s"hyperparameter-tuning/CF-user_rec-year_${year}.json")
+            new File(out_dir.substring(5) + s"hyperparameter-tuning/CF-user_rec-year_${year}.json")
           )
         )
         bw.write(year_hyperparameter_with_error_array.toArray.asJson.spaces2SortKeys)

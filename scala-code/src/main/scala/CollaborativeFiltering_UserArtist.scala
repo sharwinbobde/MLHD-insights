@@ -7,12 +7,12 @@ import utils.{CF_selected_hyperparms, CollabFilteringUtils}
 object CollaborativeFiltering_UserArtist {
 
   val ratingCol = "rating"
-  val items_to_recommend = 100
-  val experiment_years: Array[Int] = Array(2005, 2008, 2012)
-//  val experiment_years: Array[Int] = Array(2005, 2008)
+  val items_to_recommend = 50
+//  val experiment_years: Array[Int] = Array(2005, 2008, 2012)
+  val experiment_years: Array[Int] = Array(2005, 2008)
   val sample_items_per_artist = 10
 
-  val rating_lower_threshold = 25
+  val rating_lower_threshold = 20
   val CF_utils: CollabFilteringUtils = new CollabFilteringUtils(
     "user_id",
     "artist_id",
@@ -33,6 +33,7 @@ object CollaborativeFiltering_UserArtist {
         .config("arangodb.hosts", "plb.sharwinbobde.com:8529") // system ip as docker ip won't be loopback
         .config("arangodb.user", "root")
         .config("arangodb.password", "Happy2Help!")
+        .config("spark.memory.fraction", "0.9")
         .config("spark.driver.memoryOverhead", "10000")
         .config("spark.executor.memoryOverhead", "10000")
         .appName("CollabFiltering User-Artist")
