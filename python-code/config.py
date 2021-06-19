@@ -22,3 +22,4 @@ CUDA_neighbour_search_df_dir = "/run/media/sharwinbobde/ExtraStorage/neighbour_s
 CUDA_neighbour_search_df_result_dir = "/run/media/sharwinbobde/ExtraStorage/neighbour_search/test-results/"
 
 EA_experiment_output_dir = "/run/media/sharwinbobde/ExtraStorage/EA-output/"
+EA_experiment_reference_fronts = "/run/media/sharwinbobde/ExtraStorage/reference_fronts/"

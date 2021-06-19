@@ -34,10 +34,10 @@ class RecommendationUtils:
         if len(models) != len(reranking_weights):
             raise ValueError("models and reranking_weights must be lists with the same size")
 
-        if not isclose(np.sum(reranking_weights), 1.0, rel_tol=0.01):
-            raise ValueError(
-                "the list reranking_weights should sum up to 1 (with acceptable error of 1%)\nprovided: " + str(
-                    reranking_weights))
+        # if not isclose(np.sum(reranking_weights), 1.0, rel_tol=0.01):
+        #     raise ValueError(
+        #         "the list reranking_weights should sum up to 1 (with acceptable error of 1%)\nprovided: " + str(
+        #             reranking_weights))
 
         list_df = []
         for i in range(len(models)):

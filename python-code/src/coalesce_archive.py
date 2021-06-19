@@ -37,7 +37,8 @@ def read_catalog() -> dict:
 if __name__ == '__main__':
     archive_size = 100
     # data_stem = f"../../scala-code/data/processed/archived-{archive_size}-parts/"
-    data_stem = f"../../scala-code/data/processed/"
+    # data_stem = f"../../scala-code/data/processed/"
+    data_stem = f"/home/sharwinbobde/Studies/Thesis/200-parts-record-keeping/spark-output-serg3/out/data/processed/"
     spark = SparkSession \
         .builder \
         .getOrCreate()

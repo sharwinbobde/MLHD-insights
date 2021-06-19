@@ -3,6 +3,7 @@ import logging
 import sys
 from typing import List
 
+import inquirer as inquirer
 import pandas as pd
 import recmetrics
 import numpy as np
@@ -15,14 +16,14 @@ from tqdm import tqdm
 
 from numba import njit, prange, jit
 
-data_stem = "../../scala-code/data/processed/"
+# data_stem = "../../scala-code/data/processed/"
 
 valid_models = ["CF-user_rec", "CF-user_artist", "Pop", "Tailored"]
 
 
 class MetricsEvaluator:
 
-    def __init__(self, models, year: int, k: int, archive_size: int = None, RS_or_EA: str = "RS"):
+    def __init__(self, models, year: int, k: int, data_stem:str, archive_size: int = None, RS_or_EA: str = "RS"):
         for model in models:
             if model not in valid_models:
                 raise ValueError(f"value for test_set_type should be in {valid_models}")
@@ -126,7 +127,7 @@ class MetricsEvaluator:
                 else:
                     removed_users += 1
             print(
-                f"Warning! removed {removed_users} of {len(recs)} ({round(removed_users / len(recs) * 100,2)}%)"
+                f"Warning! removed {removed_users} of {len(recs)} ({round(removed_users / len(recs) * 100, 2)}%)"
                 f" users with recommendation length < {k}")
             predicted = np.array(processed_arr, dtype=np.int64)
 
@@ -163,13 +164,17 @@ class MetricsEvaluator:
 
     def coverage(self, recs: dict):
         """
-        Coverage in percentage
+        Coverage scaled between 0-1
         :param recs: recommendations dictionary
         :return:
         """
-        arr = list(recs.values())
+        predicted = list(recs.values())
         catalog = list(self.catalog.keys())
-        return recmetrics.prediction_coverage(arr, catalog) / 100.0
+        # return recmetrics.prediction_coverage(arr, catalog) / 100.0
+        predicted_flattened = [p for sublist in predicted for p in sublist]
+        unique_predictions = len(set(predicted_flattened))
+        prediction_coverage = unique_predictions / len(catalog)
+        return prediction_coverage
 
     def familiarity(self, recs):
         # TODO
@@ -234,7 +239,6 @@ if __name__ == '__main__':
     for yr in experiment_years:
         # metrics_evaluators[yr] = MetricsEvaluator(models=models_, year=yr, k=k_, archive_size=archive_parts_test)
         metrics_evaluators[yr] = MetricsEvaluator(models=models_, year=yr, k=k_)
-    # TODO filter users to have some specified number of items
     metrics = ['MAR', 'Cov', 'modPers', 'Nov']
     # metrics = ['MAR', 'Cov', 'Nov']
     # metrics = ['modPers', 'Pers']

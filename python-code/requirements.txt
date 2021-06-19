@@ -132,3 +132,6 @@ WebOb==1.8.7
 widgetsnbextension==3.5.1
 zope.deprecation==4.4.0
 zope.interface==5.4.0
+
+inquirer~=2.7.0
+recmetrics~=0.1.0
